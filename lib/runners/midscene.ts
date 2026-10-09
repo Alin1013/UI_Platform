@@ -6,12 +6,48 @@
 import { copyFile } from "node:fs/promises";
 import path from "node:path";
 import type { Page } from "playwright";
-import type { AutomationStep, RunnerId } from "../types";
+import type {
+  AutomationStep,
+  MidsceneAiContexts,
+  MidsceneCacheConfig,
+  MidsceneScrollDirection,
+  RunnerId,
+} from "../types";
 import { normalizeUrl } from "./playwright";
 
 /** 只声明平台实际使用的 Midscene 方法，避免依赖内部实现类型。 */
 type MidsceneAgent = {
+  aiTap(target: string, options?: { context?: string }): Promise<void>;
+  aiInput(
+    target: string,
+    options: { value: string; mode?: "replace"; context?: string },
+  ): Promise<void>;
+  aiKeyboardPress(
+    target: string | undefined,
+    options: { keyName: string; context?: string },
+  ): Promise<void>;
+  aiHover(target: string, options?: { context?: string }): Promise<void>;
+  aiScroll(
+    target: string | undefined,
+    options: {
+      direction?: "up" | "down" | "left" | "right";
+      scrollType:
+        | "singleAction"
+        | "scrollToTop"
+        | "scrollToBottom"
+        | "scrollToLeft"
+        | "scrollToRight";
+      context?: string;
+    },
+  ): Promise<void>;
+  aiDoubleClick(target: string, options?: { context?: string }): Promise<void>;
+  aiRightClick(target: string, options?: { context?: string }): Promise<void>;
+  aiClearInput(target: string, options?: { context?: string }): Promise<void>;
+  aiBoolean(prompt: string, options?: { context?: string }): Promise<boolean>;
+  aiNumber(prompt: string, options?: { context?: string }): Promise<number>;
+  aiString(prompt: string, options?: { context?: string }): Promise<string>;
   aiAct(instruction: string): Promise<string | undefined>;
+  aiAct(instruction: string, options?: { context?: string }): Promise<string | undefined>;
   aiAssert(assertion: string): Promise<
     | {
         pass?: boolean;
@@ -20,10 +56,25 @@ type MidsceneAgent = {
       }
     | undefined
   >;
+  aiAssert(
+    assertion: string,
+    options?: { context?: string },
+  ): Promise<
+    | {
+        pass?: boolean;
+        thought?: string;
+        message?: string;
+      }
+    | undefined
+  >;
   aiQuery(demand: Record<string, unknown>): Promise<unknown>;
+  aiQuery(
+    demand: Record<string, unknown>,
+    options?: { context?: string },
+  ): Promise<unknown>;
   aiWaitFor(
     assertion: string,
-    options?: { timeoutMs?: number },
+    options?: { timeoutMs?: number; context?: string },
   ): Promise<void>;
   destroy(): Promise<void>;
 };
@@ -81,6 +132,37 @@ function requiredText(step: AutomationStep, field: "target" | "value"): string {
   return text;
 }
 
+/** 把平台方向枚举转换为 Midscene 的 direction + scrollType 组合。 */
+function midsceneScrollParams(direction: MidsceneScrollDirection): {
+  direction?: "up" | "down" | "left" | "right";
+  scrollType:
+    | "singleAction"
+    | "scrollToTop"
+    | "scrollToBottom"
+    | "scrollToLeft"
+    | "scrollToRight";
+} {
+  const directions = { up: "up", down: "down", left: "left", right: "right" } as const;
+  switch (direction) {
+    case "up":
+      return { direction: directions.up, scrollType: "singleAction" };
+    case "down":
+      return { direction: directions.down, scrollType: "singleAction" };
+    case "left":
+      return { direction: directions.left, scrollType: "singleAction" };
+    case "right":
+      return { direction: directions.right, scrollType: "singleAction" };
+    case "toTop":
+      return { direction: directions.up, scrollType: "scrollToTop" };
+    case "toBottom":
+      return { direction: directions.down, scrollType: "scrollToBottom" };
+    case "toLeft":
+      return { direction: directions.left, scrollType: "scrollToLeft" };
+    case "toRight":
+      return { direction: directions.right, scrollType: "scrollToRight" };
+  }
+}
+
 /**
  * Midscene 报告默认生成在 midscene_run/report 下。
  * 文件名绑定 executionId，保证并发执行互不覆盖；完成后复制进平台统一产物目录。
@@ -104,21 +186,36 @@ async function copyMidsceneReport(executionId: string): Promise<string | undefin
 
 export async function prepareMidsceneSession(
   page: Page,
-  taskName: string,
-  executionId: string,
-  defaultTimeout: number,
+  options: {
+    taskName: string;
+    taskId: string;
+    executionId: string;
+    defaultTimeout: number;
+    aiContexts?: MidsceneAiContexts;
+    cache?: MidsceneCacheConfig;
+  },
 ): Promise<MidsceneSession> {
   assertMidsceneConfigured();
   const { PlaywrightAgent } = await import("@midscene/web/playwright");
+  // 缓存 ID 绑定任务而不是执行；报告文件仍绑定执行，回归执行才能复用定位结果。
+  const cache =
+    options.cache?.enabled === false
+      ? false
+      : {
+          id: options.cache?.id ?? options.taskId,
+          strategy: options.cache?.strategy ?? "read-write",
+        };
   const agent = new PlaywrightAgent(page, {
-    groupName: taskName,
+    groupName: options.taskName,
     groupDescription: "由 UI 自动化平台调度执行",
     generateReport: true,
     persistExecutionDump: true,
-    reportFileName: `midscene-${executionId}`,
+    reportFileName: `midscene-${options.executionId}`,
+    aiContexts: options.aiContexts,
+    cache,
   }) as unknown as MidsceneAgent;
 
-  return { agent, defaultTimeout };
+  return { agent, defaultTimeout: options.defaultTimeout };
 }
 
 export async function runMidsceneStep(
@@ -143,7 +240,7 @@ export async function runMidsceneStep(
     case "click": {
       const target = step.target ?? requiredText(step, "value");
       return withTimeout(
-        session.agent.aiAct(`点击页面中的 ${target}`),
+        session.agent.aiTap(target, { context: step.context }),
         timeout,
         `点击 ${target}`,
       );
@@ -152,7 +249,12 @@ export async function runMidsceneStep(
       const target = requiredText(step, "target");
       const value = requiredText(step, "value");
       return withTimeout(
-        session.agent.aiAct(`在页面中的 ${target} 输入 ${value}`),
+        session.agent.aiInput(target, {
+          value,
+          // 平台 fill 语义是替换旧值；显式 mode 避免依赖 Midscene 的默认输入行为。
+          mode: "replace",
+          context: step.context,
+        }),
         timeout,
         `输入 ${target}`,
       );
@@ -160,15 +262,63 @@ export async function runMidsceneStep(
     case "press": {
       const key = requiredText(step, "value");
       return withTimeout(
-        session.agent.aiAct(`按下 ${key} 键`),
+        session.agent.aiKeyboardPress(step.target, {
+          keyName: key,
+          context: step.context,
+        }),
         timeout,
         `按下 ${key}`,
+      );
+    }
+    case "hover": {
+      const target = requiredText(step, "target");
+      return withTimeout(
+        session.agent.aiHover(target, { context: step.context }),
+        timeout,
+        `悬停 ${target}`,
+      );
+    }
+    case "scroll": {
+      const direction = step.direction ?? "down";
+      return withTimeout(
+        session.agent.aiScroll(step.target, {
+          ...midsceneScrollParams(direction),
+          context: step.context,
+        }),
+        timeout,
+        `滚动 ${direction}`,
+      );
+    }
+    case "doubleClick": {
+      const target = requiredText(step, "target");
+      return withTimeout(
+        session.agent.aiDoubleClick(target, { context: step.context }),
+        timeout,
+        `双击 ${target}`,
+      );
+    }
+    case "rightClick": {
+      const target = requiredText(step, "target");
+      return withTimeout(
+        session.agent.aiRightClick(target, { context: step.context }),
+        timeout,
+        `右键 ${target}`,
+      );
+    }
+    case "clearInput": {
+      const target = requiredText(step, "target");
+      return withTimeout(
+        session.agent.aiClearInput(target, { context: step.context }),
+        timeout,
+        `清空 ${target}`,
       );
     }
     case "expectText": {
       const expected = requiredText(step, "value");
       const result = await withTimeout(
-        session.agent.aiAssert(`页面包含文本 ${expected}`),
+        session.agent.aiAssert(`页面包含文本 ${expected}`, {
+          context: step.context,
+        }),
         timeout,
         `断言 ${expected}`,
       );
@@ -179,14 +329,18 @@ export async function runMidsceneStep(
     }
     case "aiAct": {
       return withTimeout(
-        session.agent.aiAct(requiredText(step, "value")),
+        session.agent.aiAct(requiredText(step, "value"), {
+          context: step.context,
+        }),
         timeout,
         "AI 操作",
       );
     }
     case "aiAssert": {
       return withTimeout(
-        session.agent.aiAssert(requiredText(step, "value")),
+        session.agent.aiAssert(requiredText(step, "value"), {
+          context: step.context,
+        }),
         timeout,
         "AI 断言",
       );
@@ -196,16 +350,46 @@ export async function runMidsceneStep(
         throw new Error("action=aiQuery 必须提供 schema 对象");
       }
       return withTimeout(
-        session.agent.aiQuery(step.schema),
+        session.agent.aiQuery(step.schema, { context: step.context }),
         timeout,
         "AI 数据提取",
       );
     }
     case "aiWaitFor": {
       return withTimeout(
-        session.agent.aiWaitFor(requiredText(step, "value"), { timeoutMs: timeout }),
+        session.agent.aiWaitFor(requiredText(step, "value"), {
+          timeoutMs: timeout,
+          context: step.context,
+        }),
         timeout,
         "AI 等待条件",
+      );
+    }
+    case "aiBoolean": {
+      return withTimeout(
+        session.agent.aiBoolean(requiredText(step, "value"), {
+          context: step.context,
+        }),
+        timeout,
+        "AI 布尔判断",
+      );
+    }
+    case "aiNumber": {
+      return withTimeout(
+        session.agent.aiNumber(requiredText(step, "value"), {
+          context: step.context,
+        }),
+        timeout,
+        "AI 数值提取",
+      );
+    }
+    case "aiString": {
+      return withTimeout(
+        session.agent.aiString(requiredText(step, "value"), {
+          context: step.context,
+        }),
+        timeout,
+        "AI 字符串提取",
       );
     }
     default:
