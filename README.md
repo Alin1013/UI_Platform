@@ -15,7 +15,7 @@ npm run start
 
 “自然语言测试用例”面板支持常见中文指令：打开 URL、输入、点击、按键、等待和断言文本。系统会先解析为可编辑的 Playwright 步骤，再保存用例并立即执行。
 
-登录字段支持紧凑写法，例如 `账号输入 demo@example.com`、`租户输入 tenant-1` 和 `密码输入 secret`。平台会将账号、租户、密码等常见字段解析为 label、placeholder 或 aria-label 定位器。
+登录字段支持紧凑写法，例如 `账号输入 demo@example.com`、`租户输入 tenant-1` 和 `密码输入 secret`。平台会将账号、租户、密码等常见字段解析为 label、placeholder 或 aria-label 定位器。`点击登录按钮` 会优先定位页面的 submit 按钮，避免标题或页签误命中。
 
 ## 当前后端能力
 

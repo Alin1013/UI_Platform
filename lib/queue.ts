@@ -49,11 +49,19 @@ export function concurrency(): number {
 configureConcurrency(process.env.UI_PLATFORM_MAX_CONCURRENCY);
 
 async function runOne(executionId: string): Promise<void> {
-  const state = await updateExecution(executionId, (execution) => ({
-    ...execution,
-    status: "running",
-    startedAt: new Date().toISOString(),
-  }));
+  // 领取动作必须是串行状态机的一部分；否则外层调度循环在落盘前重读，会重复执行同一任务。
+  let claimed = false;
+  const state = await updateExecution(executionId, (execution) => {
+    if (execution.status !== "queued") return execution;
+    claimed = true;
+    return {
+      ...execution,
+      status: "running",
+      startedAt: new Date().toISOString(),
+    };
+  });
+  // 后进入的重复 runOne 读到的也是 running，因此必须用本次闭包是否真正领取来裁决。
+  if (!claimed || !state) return;
   const taskId = state?.taskId;
   const task = taskId ? await getTask(taskId) : undefined;
 
@@ -68,7 +76,14 @@ async function runOne(executionId: string): Promise<void> {
   }
 
   try {
-    const logs = await executeWebTask(task, executionId);
+    const logs = await executeWebTask(task, executionId, async (log) => {
+      // 增量写入让 UI 轮询到每步结果；失败时后续更新只补最终状态，不覆盖这些日志。
+      await updateExecution(executionId, (execution) => ({
+        ...execution,
+        logs: [...execution.logs, log],
+        currentStep: log.index,
+      }));
+    });
     const finishedAt = new Date().toISOString();
     await updateExecution(executionId, (execution) => ({
       ...execution,

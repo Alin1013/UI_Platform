@@ -100,11 +100,12 @@ async function resolveLocator(page: Page, target: string) {
 
 /**
  * 逐步执行并落盘截图。
- * 返回更新后的日志；异常向上传播，由调度器统一收敛为 failed 状态。
+ * 每完成一步都通过回调通知调度器；即使后续步骤失败，前面步骤也不会丢失。
  */
 export async function executeWebTask(
   task: AutomationTask,
   executionId: string,
+  onStepLog?: (log: StepLog) => Promise<void> | void,
 ): Promise<StepLog[]> {
   const { chromium } = await import("playwright");
   const outputDir = artifactDir(executionId);
@@ -137,6 +138,8 @@ export async function executeWebTask(
           durationMs: Date.now() - startedAt.getTime(),
           screenshot: screenshotName,
         });
+        // 先把成功日志持久化，再继续下一步，保证失败报告包含真实进度。
+        await onStepLog?.(logs[logs.length - 1]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const screenshotName = `step-${String(index + 1).padStart(2, "0")}-failed.png`;
@@ -159,6 +162,8 @@ export async function executeWebTask(
           message,
           screenshot: screenshot ? screenshotName : undefined,
         });
+        // 失败日志必须先落库再抛出，否则队列只能看到最终异常。
+        await onStepLog?.(logs[logs.length - 1]);
         throw error;
       }
     }

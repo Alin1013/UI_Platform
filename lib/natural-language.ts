@@ -119,6 +119,10 @@ function parseLine(line: string): AutomationStep | undefined {
       .replace(/^(点击|单击|click|tap)\s*(?:按钮)?\s*/i, "")
       .replace(/(?:按钮|链接)$/, "");
     if (!rawTarget) throw new Error("缺少点击目标");
+    // 登录页常有标题和页签包含“登录”；登录/提交动作应收敛到唯一的 submit 按钮。
+    if (/^(登录|提交)$/.test(rawTarget)) {
+      return { action: "click", target: "button[type=submit]" };
+    }
     return { action: "click", target: targetFromText(rawTarget) };
   }
 
