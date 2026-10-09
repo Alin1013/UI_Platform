@@ -3,9 +3,10 @@
  * 单机部署时全局运行集合能精确限制并发；如果改为多进程，应替换为 BullMQ/Redis。
  */
 
-import type { TaskExecution } from "./types";
+import type { TaskExecution, TestEnvironment } from "./types";
 import type { RunnerArtifacts } from "./executor";
 import {
+  getEnvironment,
   getTask,
   listExecutions,
   saveExecution,
@@ -81,12 +82,19 @@ async function runOne(executionId: string): Promise<void> {
   const maxAttempts = Math.min(4, Math.max(1, (task.runtime?.retries ?? 0) + 1));
   let artifacts: RunnerArtifacts = {};
 
+  // 执行前解析一次环境；环境被删除时回退到全局 UI_PLATFORM_BASE_URL。
+  let environment: TestEnvironment | undefined;
+  if (task.environmentId) {
+    environment = (await getEnvironment(task.environmentId)) ?? undefined;
+  }
+
   try {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       let logs: TaskExecution["logs"] = [];
       try {
         logs = await executeWebTask(task, executionId, {
           attempt,
+          environment,
           onStepLog: async (log) => {
             // 增量写入让 UI 轮询到每步结果；失败时后续更新只补最终状态，不覆盖这些日志。
             await updateExecution(executionId, (execution) => ({

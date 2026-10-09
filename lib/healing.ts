@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Browser, Page } from "playwright";
 import { requestModelJson, type ModelImage } from "./ai/model-client";
+import { getEnvironment } from "./store";
 import { artifactDir } from "./runner-runtime";
 import { resolveLocator, runPlaywrightStep } from "./runners/playwright";
 import type {
@@ -15,6 +16,7 @@ import type {
   BrowserId,
   HealingCandidate,
   StepLog,
+  TestEnvironment,
   TaskExecution,
 } from "./types";
 
@@ -101,6 +103,7 @@ async function validateCandidate(
   candidate: HealingCandidate,
   browserId: BrowserId,
   headless: boolean,
+  environment?: TestEnvironment,
 ): Promise<void> {
   const browser = await launchSameBrowser(browserId, headless);
   try {
@@ -110,7 +113,7 @@ async function validateCandidate(
     const page = await context.newPage();
     for (const step of steps) {
       // 失败前的确定性步骤应该能重放；如果环境已变化，明确报错比保存无效建议更好。
-      await runPlaywrightStep(page, step);
+      await runPlaywrightStep(page, step, environment);
     }
     const locator = await resolveLocator(page, candidate.healedTarget);
     const count = await locator.count();
@@ -159,6 +162,7 @@ export async function createHealingCandidate(
     candidate,
     task.runtime?.browser ?? "chromium",
     task.headless,
+    task.environmentId ? await getEnvironment(task.environmentId) : undefined,
   );
   return candidate;
 }

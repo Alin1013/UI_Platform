@@ -6,6 +6,17 @@
 
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 
+/** 测试环境表；管理页配置，执行时按任务关联的环境注入 URL 和凭证。 */
+export const environments = sqliteTable("environments", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  baseUrl: text("base_url").notNull(),
+  username: text("username"),
+  password: text("password"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 /** 自动化任务表；结构化步骤整体存 JSON，避免拆行导致迁移复杂化。 */
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
@@ -17,6 +28,8 @@ export const tasks = sqliteTable("tasks", {
   labels: text("labels", { mode: "json" }).notNull().default([]),
   headless: integer("headless", { mode: "boolean" }).notNull().default(true),
   steps: text("steps", { mode: "json" }).notNull().default([]),
+  environmentId: text("environment_id"),
+  aiContexts: text("ai_contexts", { mode: "json" }),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

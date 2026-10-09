@@ -8,6 +8,7 @@ import {
   FileText,
   LayoutDashboard,
   MonitorPlay,
+  Globe,
 } from "lucide-react";
 import "./globals.css";
 
@@ -19,6 +20,7 @@ export const metadata: Metadata = {
 const navItems = [
   { href: "/", label: "仪表盘", icon: LayoutDashboard },
   { href: "/tasks", label: "任务管理", icon: ClipboardList },
+  { href: "/environments", label: "环境管理", icon: Globe },
   { href: "/executions", label: "执行监控", icon: MonitorPlay },
   { href: "/reports", label: "报告", icon: FileText },
 ];

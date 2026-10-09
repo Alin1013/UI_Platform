@@ -4,6 +4,9 @@ import type {
   AutomationRuntime,
   AutomationStep,
   AutomationTask,
+  MidsceneAiContexts,
+  MidsceneCacheStrategy,
+  MidsceneScrollDirection,
   RunnerId,
 } from "./types";
 
@@ -18,6 +21,42 @@ const actions = new Set([
   "aiAssert",
   "aiQuery",
   "aiWaitFor",
+  "hover",
+  "scroll",
+  "doubleClick",
+  "rightClick",
+  "clearInput",
+  "aiBoolean",
+  "aiNumber",
+  "aiString",
+]);
+
+const midsceneOnlyActions = new Set([
+  "aiAct",
+  "aiAssert",
+  "aiQuery",
+  "aiWaitFor",
+  "hover",
+  "scroll",
+  "doubleClick",
+  "rightClick",
+  "clearInput",
+  "aiBoolean",
+  "aiNumber",
+  "aiString",
+]);
+
+const midsceneContextKeys = new Set(["default", "aiAct", "aiQuery"]);
+const cacheStrategies = new Set(["read-only", "read-write", "write-only"]);
+const scrollDirections = new Set([
+  "up",
+  "down",
+  "left",
+  "right",
+  "toTop",
+  "toBottom",
+  "toLeft",
+  "toRight",
 ]);
 
 const browsers = new Set(["chromium", "firefox", "webkit"]);
@@ -64,6 +103,37 @@ function parseRuntime(value: unknown): AutomationRuntime | undefined {
     runtime.trace = raw.trace === true || raw.trace === "true";
   }
 
+  if (raw.cache != null) {
+    if (typeof raw.cache !== "object" || Array.isArray(raw.cache)) {
+      throw new Error("runtime.cache 必须是对象");
+    }
+    const cacheRaw = raw.cache as Record<string, unknown>;
+    const cache: AutomationRuntime["cache"] = {};
+    if (cacheRaw.enabled != null) {
+      if (
+        typeof cacheRaw.enabled !== "boolean" &&
+        cacheRaw.enabled !== "true" &&
+        cacheRaw.enabled !== "false"
+      ) {
+        throw new Error("runtime.cache.enabled 必须是布尔值");
+      }
+      cache.enabled = cacheRaw.enabled === true || cacheRaw.enabled === "true";
+    }
+    if (cacheRaw.strategy != null) {
+      const strategy = String(cacheRaw.strategy);
+      if (!cacheStrategies.has(strategy)) {
+        throw new Error("runtime.cache.strategy 只支持 read-only、read-write 或 write-only");
+      }
+      cache.strategy = strategy as MidsceneCacheStrategy;
+    }
+    if (cacheRaw.id != null) {
+      const id = String(cacheRaw.id).trim();
+      if (!id) throw new Error("runtime.cache.id 不能为空");
+      cache.id = id;
+    }
+    runtime.cache = cache;
+  }
+
   return Object.keys(runtime).length ? runtime : undefined;
 }
 
@@ -90,6 +160,25 @@ function parseLabels(value: unknown): string[] {
   return value.map((label) => (label as string).trim()).filter(Boolean);
 }
 
+/** 业务上下文会直接进入模型提示，剔除空白可避免生成无意义 token。 */
+function parseMidsceneAiContexts(value: unknown): MidsceneAiContexts | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("aiContexts 必须是对象");
+  }
+  const raw = value as Record<string, unknown>;
+  const contexts: MidsceneAiContexts = {};
+  for (const [key, item] of Object.entries(raw)) {
+    if (item == null) continue;
+    if (!midsceneContextKeys.has(key)) {
+      throw new Error(`aiContexts.${key} 不是受支持的上下文键`);
+    }
+    const text = String(item).trim();
+    if (text) contexts[key as keyof MidsceneAiContexts] = text;
+  }
+  return Object.keys(contexts).length ? contexts : undefined;
+}
+
 export interface TaskDraft {
   name: string;
   target: "web";
@@ -97,6 +186,8 @@ export interface TaskDraft {
   runtime?: AutomationRuntime;
   description?: string;
   labels: string[];
+  environmentId?: string;
+  aiContexts?: MidsceneAiContexts;
   headless: boolean;
   steps: AutomationStep[];
 }
@@ -143,6 +234,19 @@ export function parseTaskDraft(input: unknown): TaskDraft {
         throw new Error(`第 ${index + 1} 个步骤的 timeout 必须大于 0`);
       }
     }
+    if (step.direction != null) {
+      const direction = String(step.direction);
+      if (!scrollDirections.has(direction)) {
+        throw new Error(
+          `第 ${index + 1} 个步骤的 direction 只支持 ${[...scrollDirections].join("、")}`,
+        );
+      }
+      normalized.direction = direction as MidsceneScrollDirection;
+    }
+    if (step.context != null) {
+      const context = String(step.context).trim();
+      if (context) normalized.context = context;
+    }
 
     // 必填字段在入库前拦截，避免任务保存成功却在执行期才暴露定位器或值缺失。
     switch (normalized.action) {
@@ -184,10 +288,30 @@ export function parseTaskDraft(input: unknown): TaskDraft {
           throw new Error(`第 ${index + 1} 个步骤的 action=aiQuery 必须提供 schema`);
         }
         break;
+      case "hover":
+      case "doubleClick":
+      case "rightClick":
+      case "clearInput":
+        if (!normalized.target) {
+          throw new Error(`第 ${index + 1} 个步骤的 action=${normalized.action} 必须提供 target`);
+        }
+        break;
+      case "scroll":
+        if (!normalized.target && !normalized.direction) {
+          throw new Error(`第 ${index + 1} 个步骤的 action=scroll 必须提供 target 或 direction`);
+        }
+        break;
+      case "aiBoolean":
+      case "aiNumber":
+      case "aiString":
+        if (!normalized.value) {
+          throw new Error(`第 ${index + 1} 个步骤的 action=${normalized.action} 必须提供 value`);
+        }
+        break;
     }
 
     // AI 动作依赖模型语义定位；约束在 Midscene Runner，避免 Playwright 适配器出现隐式分叉。
-    if (runner !== "midscene" && normalized.action.startsWith("ai")) {
+    if (runner !== "midscene" && midsceneOnlyActions.has(normalized.action)) {
       throw new Error(`runner=playwright 不支持 AI 动作 ${normalized.action}`);
     }
 
@@ -201,8 +325,36 @@ export function parseTaskDraft(input: unknown): TaskDraft {
     runtime,
     description: optionalText(raw.description),
     labels: parseLabels(raw.labels),
+    environmentId: optionalText(raw.environmentId),
+    aiContexts: parseMidsceneAiContexts(raw.aiContexts),
     headless: parseHeadless(raw.headless),
     steps,
+  };
+}
+
+/** 环境草稿白名单校验；name 唯一约束由数据库 UNIQUE 索引兜底。 */
+export function parseEnvironmentDraft(input: unknown) {
+  if (!input || typeof input !== "object") {
+    throw new Error("环境请求体必须是 JSON 对象");
+  }
+  const raw = input as Record<string, unknown>;
+  const name = String(raw.name ?? "").trim();
+  if (!name) throw new Error("环境名称不能为空");
+  const baseUrl = String(raw.baseUrl ?? "").trim();
+  if (!baseUrl) throw new Error("基础 URL 不能为空");
+  try {
+    const parsed = new URL(baseUrl);
+    if (!/^https?:$/.test(parsed.protocol)) {
+      throw new Error("只支持 http 或 https");
+    }
+  } catch {
+    throw new Error("基础 URL 格式无效");
+  }
+  return {
+    name,
+    baseUrl: baseUrl.replace(/\/+$/, ""),
+    username: optionalText(raw.username),
+    password: optionalText(raw.password),
   };
 }
 

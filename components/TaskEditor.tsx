@@ -5,8 +5,13 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Save, X } from "lucide-react";
-import type { AutomationAction, AutomationStep, AutomationTask } from "@/lib/types";
-import { createTask, updateTask } from "@/lib/client";
+import type {
+  AutomationAction,
+  AutomationStep,
+  AutomationTask,
+  TestEnvironment,
+} from "@/lib/types";
+import { createTask, loadEnvironments, updateTask } from "@/lib/client";
 
 interface StepDraft extends AutomationStep {
   key: string;
@@ -47,6 +52,7 @@ function draftFromTask(task?: AutomationTask | null) {
     name: task?.name ?? "",
     description: task?.description ?? "",
     labels: task?.labels.join(", ") ?? "",
+    environmentId: task?.environmentId ?? "",
     headless: task?.headless ?? true,
     runner: task?.runner ?? "playwright",
     runtime: task?.runtime ?? {},
@@ -72,6 +78,14 @@ export function TaskEditor({
   const [draft, setDraft] = useState(() => draftFromTask(task));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [environments, setEnvironments] = useState<TestEnvironment[]>([]);
+
+  // 环境列表只在编辑器打开时加载一次；环境管理页负责增删改。
+  useEffect(() => {
+    loadEnvironments()
+      .then((payload) => setEnvironments(payload.environments))
+      .catch(() => setEnvironments([]));
+  }, []);
 
   // 编辑目标切换时重置表单，避免上一次编辑内容串到新任务。
   useEffect(() => {
@@ -139,6 +153,7 @@ export function TaskEditor({
           .split(",")
           .map((label) => label.trim())
           .filter(Boolean),
+        environmentId: draft.environmentId || undefined,
         headless: draft.headless,
         // 表单里的空值统一剔除，避免把 "undefined" 字符串传给 Playwright。
         steps: draft.steps.map(({ key: _key, schemaText, ...step }) => {
@@ -206,6 +221,23 @@ export function TaskEditor({
             {runnerOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="task-environment">测试环境</label>
+          <select
+            id="task-environment"
+            value={draft.environmentId}
+            onChange={(event) =>
+              setDraft({ ...draft, environmentId: event.target.value })
+            }
+          >
+            <option value="">全局默认</option>
+            {environments.map((env) => (
+              <option key={env.id} value={env.id}>
+                {env.name} · {env.baseUrl}
               </option>
             ))}
           </select>

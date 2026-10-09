@@ -21,6 +21,16 @@ sqlite.pragma("foreign_keys = ON");
 
 // 模块首次加载时确保表存在；单进程 Next.js 只会执行一次，不引入额外迁移工具依赖。
 sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS environments (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    base_url TEXT NOT NULL,
+    username TEXT,
+    password TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -32,6 +42,7 @@ sqlite.exec(`
     headless INTEGER NOT NULL DEFAULT 1,
     steps TEXT NOT NULL,
     environment_id TEXT,
+    ai_contexts TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -60,6 +71,14 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
   CREATE INDEX IF NOT EXISTS idx_executions_queued_at ON executions(queued_at);
 `);
+
+// 已有安装会命中 CREATE TABLE IF NOT EXISTS 分支；这里补齐新 JSON 列，避免部署前要求重建数据库。
+const taskColumns = sqlite
+  .prepare("PRAGMA table_info(tasks)")
+  .all() as Array<{ name: string }>;
+if (!taskColumns.some((column) => column.name === "ai_contexts")) {
+  sqlite.exec("ALTER TABLE tasks ADD COLUMN ai_contexts TEXT");
+}
 
 export const db = drizzle(sqlite, { schema });
 export { schema };

@@ -12,6 +12,7 @@ import type {
   BrowserId,
   RunnerId,
   StepLog,
+  TestEnvironment,
 } from "./types";
 import { runPlaywrightStep } from "./runners/playwright";
 import {
@@ -35,6 +36,8 @@ export interface RunnerArtifacts {
 
 export interface WebExecutionOptions {
   attempt?: number;
+  /** 任务关联的环境；baseUrl 替换全局配置，凭证用于占位符替换。 */
+  environment?: TestEnvironment;
   onStepLog?: (log: StepLog) => Promise<void> | void;
   /** 失败执行也要归档 trace/report，因此在抛出错误前回调一次产物结果。 */
   onArtifacts?: (artifacts: RunnerArtifacts) => Promise<void> | void;
@@ -75,17 +78,27 @@ function browserId(task: AutomationTask): BrowserId {
   return task.runtime?.browser ?? "chromium";
 }
 
-function createRunner(task: AutomationTask, executionId: string): WebRunner {
+function createRunner(
+  task: AutomationTask,
+  executionId: string,
+  environment?: TestEnvironment,
+): WebRunner {
   if ((task.runner ?? "playwright") === "midscene") {
     return {
       id: "midscene",
       prepare: (page) =>
         prepareMidsceneSession(
           page,
-          task.name,
           // 报告文件必须绑定本次执行；任务 ID 会在多次运行间冲突。
-          executionId,
-          defaultAiTimeout,
+          {
+            taskName: task.name,
+            // 缓存复用任务级定位结果；报告 ID 保留每次执行现场。
+            taskId: task.id,
+            executionId,
+            defaultTimeout: defaultAiTimeout,
+            aiContexts: task.aiContexts,
+            cache: task.runtime?.cache,
+          },
         ),
       runStep: (page, session, step) => {
         if (!session) throw new Error("Midscene 会话未初始化");
@@ -99,7 +112,8 @@ function createRunner(task: AutomationTask, executionId: string): WebRunner {
   return {
     id: "playwright",
     prepare: async () => undefined,
-    runStep: (_page, _session, step) => runPlaywrightStep(_page, step),
+    // 环境通过 options 传入；这里闭包捕获后传给每一步。
+    runStep: (_page, _session, step) => runPlaywrightStep(_page, step, environment),
     finalize: async () => ({ runner: "playwright" }),
   };
 }
@@ -123,7 +137,7 @@ export async function executeWebTask(
   options: WebExecutionOptions = {},
 ): Promise<StepLog[]> {
   const attempt = options.attempt ?? 1;
-  const runner = createRunner(task, executionId);
+  const runner = createRunner(task, executionId, options.environment);
   const outputDir = artifactDir(executionId);
   const tracePath = path.join(outputDir, "trace.zip");
   const browser = await launchBrowser(task);

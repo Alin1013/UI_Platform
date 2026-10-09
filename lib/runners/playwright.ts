@@ -4,7 +4,7 @@
  */
 
 import type { Page } from "playwright";
-import type { AutomationStep } from "../types";
+import type { AutomationStep, TestEnvironment } from "../types";
 
 const defaultActionTimeout = 10_000;
 
@@ -12,10 +12,22 @@ function stepTimeout(step: AutomationStep): number {
   return step.timeout ?? defaultActionTimeout;
 }
 
-/** goto 需要完整 URL；相对地址会交给平台 base URL 解析，方便同一用例跨环境运行。 */
-export function normalizeUrl(value: string): string {
-  const configured = process.env.UI_PLATFORM_BASE_URL ?? "http://127.0.0.1:3000";
+/** goto 需要完整 URL；环境 baseUrl 优先于全局配置，方便同一用例跨环境运行。 */
+export function normalizeUrl(value: string, environment?: TestEnvironment): string {
+  const configured = environment?.baseUrl ?? process.env.UI_PLATFORM_BASE_URL ?? "http://127.0.0.1:3000";
   return new URL(value, configured).toString();
+}
+
+/**
+ * 替换 fill 值中的 {username} / {password} 占位符。
+ * 没有关联环境时保持原值不变，兼容不使用环境凭证的任务。
+ */
+function resolveValue(value: string | undefined, environment?: TestEnvironment): string {
+  if (!value) return "";
+  if (!environment) return value;
+  return value
+    .replaceAll("{username}", environment.username ?? "")
+    .replaceAll("{password}", environment.password ?? "");
 }
 
 function requiredTarget(step: AutomationStep): string {
@@ -57,10 +69,11 @@ export async function resolveLocator(page: Page, target: string) {
 export async function runPlaywrightStep(
   page: Page,
   step: AutomationStep,
+  environment?: TestEnvironment,
 ): Promise<void> {
   switch (step.action) {
     case "goto": {
-      const url = normalizeUrl(step.value ?? step.target ?? "/");
+      const url = normalizeUrl(step.value ?? step.target ?? "/", environment);
       await page.goto(url, {
         timeout: stepTimeout(step),
         waitUntil: "domcontentloaded",
@@ -74,7 +87,7 @@ export async function runPlaywrightStep(
       return;
     case "fill":
       await resolveLocator(page, requiredTarget(step)).then((locator) =>
-        locator.fill(step.value ?? "", { timeout: stepTimeout(step) }),
+        locator.fill(resolveValue(step.value, environment), { timeout: stepTimeout(step) }),
       );
       return;
     case "press":

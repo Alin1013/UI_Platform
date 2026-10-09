@@ -7,8 +7,12 @@
 import { randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { executions as executionsTable, tasks as tasksTable } from "./db/schema";
-import type { AutomationTask, TaskExecution } from "./types";
+import {
+  environments as environmentsTable,
+  executions as executionsTable,
+  tasks as tasksTable,
+} from "./db/schema";
+import type { AutomationTask, TaskExecution, TestEnvironment } from "./types";
 
 /**
  * 服务重启后恢复异常停机状态。
@@ -39,6 +43,49 @@ async function recoverInterruptedExecutions(): Promise<void> {
 const recoveryPromise = recoverInterruptedExecutions();
 export function newId(): string {
   return randomUUID();
+}
+
+export async function listEnvironments(): Promise<TestEnvironment[]> {
+  const rows = await db.select().from(environmentsTable);
+  return rows as TestEnvironment[];
+}
+
+export async function getEnvironment(
+  id: string,
+): Promise<TestEnvironment | undefined> {
+  const rows = await db
+    .select()
+    .from(environmentsTable)
+    .where(eq(environmentsTable.id, id))
+    .limit(1);
+  return (rows[0] as TestEnvironment) ?? undefined;
+}
+
+export async function saveEnvironment(
+  environment: TestEnvironment,
+): Promise<TestEnvironment> {
+  await db
+    .insert(environmentsTable)
+    .values(environment)
+    .onConflictDoUpdate({
+      target: environmentsTable.id,
+      set: {
+        name: environment.name,
+        baseUrl: environment.baseUrl,
+        username: environment.username,
+        password: environment.password,
+        updatedAt: environment.updatedAt,
+      },
+    });
+  return environment;
+}
+
+export async function deleteEnvironment(id: string): Promise<boolean> {
+  const result = await db
+    .delete(environmentsTable)
+    .where(eq(environmentsTable.id, id))
+    .returning({ id: environmentsTable.id });
+  return result.length > 0;
 }
 
 /** drizzle 返回的行结构与领域模型字段名一致，直接断言即可；不需要额外映射层。 */
@@ -76,6 +123,7 @@ export async function saveTask(task: AutomationTask): Promise<AutomationTask> {
         headless: task.headless,
         steps: task.steps,
         updatedAt: task.updatedAt,
+        aiContexts: task.aiContexts,
       },
     });
   return task;

@@ -1,6 +1,11 @@
 /** 浏览器端 API 客户端：统一错误读取和时间展示。 */
 
-import type { AutomationTask, HealingCandidate, TaskExecution } from "./types";
+import type {
+  AutomationTask,
+  HealingCandidate,
+  TaskExecution,
+  TestEnvironment,
+} from "./types";
 import type { TaskDraft } from "./validation";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -57,6 +62,30 @@ export function removeTask(id: string) {
 export function runTask(id: string) {
   return requestJson<{ execution: TaskExecution }>(`/api/tasks/${id}/run`, {
     method: "POST",
+  });
+}
+
+export function loadEnvironments() {
+  return requestJson<{ environments: TestEnvironment[] }>("/api/environments");
+}
+
+export function createEnvironment(environment: unknown) {
+  return requestJson<{ environment: TestEnvironment }>("/api/environments", {
+    method: "POST",
+    body: JSON.stringify(environment),
+  });
+}
+
+export function updateEnvironment(id: string, environment: unknown) {
+  return requestJson<{ environment: TestEnvironment }>(
+    `/api/environments/${id}`,
+    { method: "PUT", body: JSON.stringify(environment) },
+  );
+}
+
+export function removeEnvironment(id: string) {
+  return requestJson<{ ok: boolean }>(`/api/environments/${id}`, {
+    method: "DELETE",
   });
 }
 

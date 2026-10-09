@@ -12,13 +12,36 @@ export type RunnerId = "playwright" | "midscene";
 export type BrowserId = "chromium" | "firefox" | "webkit";
 
 /** 与执行环境相关的可选配置；不配置时由执行层给出安全默认值。 */
+export type MidsceneCacheStrategy = "read-only" | "read-write" | "write-only";
+
+/** Midscene 缓存能显著降低回归执行的模型调用；禁用是显式选择，而不是缺省行为。 */
+export interface MidsceneCacheConfig {
+  /** 缺省启用；false 用于需要每次重新规划的调试任务。 */
+  enabled?: boolean;
+  strategy?: MidsceneCacheStrategy;
+  /** 不传时执行器使用任务 ID，保证同一任务复用缓存且不同任务不串缓存。 */
+  id?: string;
+}
+
 export interface AutomationRuntime {
   browser?: BrowserId;
   /** 失败后额外尝试次数；0 表示只执行一次。 */
   retries?: number;
   /** 是否保存 Playwright trace，便于失败后回放操作序列。 */
   trace?: boolean;
+  /** 仅 Midscene Runner 使用；Playwright 忽略该配置。 */
+  cache?: MidsceneCacheConfig;
 }
+
+/**
+ * Midscene 业务知识按 API 分层注入；default 覆盖所有调用，专用 key 优先级更高。
+ * 先只开放三类高价值入口，避免把 Agent 全部上下文键直接暴露给任务 API。
+ */
+export type MidsceneAiContexts = {
+  default?: string;
+  aiAct?: string;
+  aiQuery?: string;
+};
 
 export type AutomationAction =
   | "goto"
@@ -30,7 +53,26 @@ export type AutomationAction =
   | "aiAct"
   | "aiAssert"
   | "aiQuery"
-  | "aiWaitFor";
+  | "aiWaitFor"
+  | "hover"
+  | "scroll"
+  | "doubleClick"
+  | "rightClick"
+  | "clearInput"
+  | "aiBoolean"
+  | "aiNumber"
+  | "aiString";
+
+/** scroll.value 的受控方向；until 系列会滚动到边界，比固定距离更适合分页加载。 */
+export type MidsceneScrollDirection =
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "toTop"
+  | "toBottom"
+  | "toLeft"
+  | "toRight";
 
 export interface AutomationStep {
   action: AutomationAction;
@@ -42,6 +84,10 @@ export interface AutomationStep {
   timeout?: number;
   /** aiQuery 的结构化提取契约，字段名和描述都由被测业务决定。 */
   schema?: Record<string, unknown>;
+  /** scroll 的滚动方向；其他 Midscene 步骤忽略。 */
+  direction?: MidsceneScrollDirection;
+  /** 单次调用上下文，优先级高于任务级 aiContexts。 */
+  context?: string;
 }
 
 export interface AutomationTask {
@@ -53,9 +99,28 @@ export interface AutomationTask {
   runtime?: AutomationRuntime;
   description?: string;
   labels: string[];
+  /** Midscene 全局业务知识；保存为任务属性，而不是每次在步骤里重复。 */
+  aiContexts?: MidsceneAiContexts;
+  /** 关联的测试环境；为空时使用全局 UI_PLATFORM_BASE_URL。 */
+  environmentId?: string;
   /** headless 默认 true，调试时可由任务覆盖。 */
   headless: boolean;
   steps: AutomationStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 测试环境定义；执行时 baseUrl 替换全局配置，凭证用于 {username}/{password} 占位符。 */
+export interface TestEnvironment {
+  id: string;
+  /** 环境名称，例如 dev、test、prod。 */
+  name: string;
+  /** 被测系统基础 URL；goto 相对路径基于此解析。 */
+  baseUrl: string;
+  /** 登录账号，写入 fill 步骤的 {username} 占位符。 */
+  username?: string;
+  /** 登录密码，写入 fill 步骤的 {password} 占位符；列表页不回显。 */
+  password?: string;
   createdAt: string;
   updatedAt: string;
 }
