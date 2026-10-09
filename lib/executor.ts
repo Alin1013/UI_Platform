@@ -14,6 +14,20 @@ import type {
 
 const defaultActionTimeout = 10_000;
 
+/**
+ * 记录调用方要求取消的执行。
+ * 删除任务发生在另一个请求里，Playwright 步骤无法安全中断，因此只在步骤边界检查并停止后续工作。
+ */
+const cancelledExecutions = new Set<string>();
+
+export function requestExecutionCancel(executionId: string): void {
+  cancelledExecutions.add(executionId);
+}
+
+function isExecutionCancelled(executionId: string): boolean {
+  return cancelledExecutions.has(executionId);
+}
+
 export function artifactDir(executionId: string): string {
   return path.join(process.cwd(), "reports", executionId);
 }
@@ -124,9 +138,16 @@ export async function executeWebTask(
     const logs: StepLog[] = [];
 
     for (const [index, step] of task.steps.entries()) {
+      // 删除任务后不继续执行剩余步骤；上一批日志保留，最终状态由调度器标记失败。
+      if (isExecutionCancelled(executionId)) {
+        throw new Error("任务已删除，执行已取消");
+      }
       const startedAt = new Date();
       try {
         await runStep(page, step);
+        if (isExecutionCancelled(executionId)) {
+          throw new Error("任务已删除，执行已取消");
+        }
         const screenshotName = `step-${String(index + 1).padStart(2, "0")}.png`;
         const screenshot = await page.screenshot({ fullPage: true });
         await fs.writeFile(path.join(outputDir, screenshotName), screenshot);
@@ -171,5 +192,6 @@ export async function executeWebTask(
     return logs;
   } finally {
     await browser.close();
+    cancelledExecutions.delete(executionId);
   }
 }

@@ -10,7 +10,7 @@ import {
   saveExecution,
   updateExecution,
 } from "./store";
-import { executeWebTask } from "./executor";
+import { executeWebTask, requestExecutionCancel } from "./executor";
 
 interface QueueRuntime {
   running: Set<Promise<void>>;
@@ -84,6 +84,11 @@ async function runOne(executionId: string): Promise<void> {
         currentStep: log.index,
       }));
     });
+    // 成功落盘前再查一次任务；覆盖“浏览器流程刚好在最后一个步骤后任务被删除”的竞态。
+    const currentTask = await getTask(taskId);
+    if (!currentTask) {
+      throw new Error("关联任务已被删除");
+    }
     const finishedAt = new Date().toISOString();
     await updateExecution(executionId, (execution) => ({
       ...execution,
@@ -158,6 +163,21 @@ export async function enqueueExecution(
   await saveExecution(execution);
   void drainQueue();
   return execution;
+}
+
+/**
+ * 任务删除前先请求取消当前任务的所有活动执行。
+ * 运行中执行会在步骤边界失败；排队执行由 runOne 发现任务缺失后标记失败。
+ */
+export async function cancelTaskExecutions(taskId: string): Promise<void> {
+  const executions = await listExecutions();
+  executions
+    .filter(
+      (execution) =>
+        execution.taskId === taskId &&
+        (execution.status === "queued" || execution.status === "running"),
+    )
+    .forEach((execution) => requestExecutionCancel(execution.id));
 }
 
 export async function queueSnapshot() {

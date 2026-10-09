@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { parseNaturalLanguageScript } from "@/lib/natural-language";
 import { enqueueExecution } from "@/lib/queue";
 import { saveTask } from "@/lib/store";
-import { taskFromDraft } from "@/lib/validation";
+import { parseTaskDraft, taskFromDraft } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
@@ -19,16 +19,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.errors.join("\n") }, { status: 400 });
     }
 
-    const task = await saveTask(
-      taskFromDraft({
-        name,
-        target: "web",
-        description: "由自然语言脚本生成的测试用例。",
-        labels: ["自然语言"],
-        headless: body.headless == null ? true : Boolean(body.headless),
-        steps: result.steps,
-      }),
-    );
+    // 自然语言解析后仍走统一任务校验，防止注释脚本生成空任务，也避免字符串 false 被误判为 true。
+    const draft = parseTaskDraft({
+      name,
+      target: "web",
+      description: "由自然语言脚本生成的测试用例。",
+      labels: ["自然语言"],
+      headless: body.headless == null ? true : body.headless,
+      steps: result.steps,
+    });
+    const task = await saveTask(taskFromDraft(draft));
     const execution = await enqueueExecution(task.id);
     return NextResponse.json({ task, execution }, { status: 201 });
   } catch (error) {
