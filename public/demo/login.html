@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  内置演示页：为首次部署提供无外网依赖的可执行链路。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登录演示</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f2f4f7; font-family: system-ui, sans-serif; color: #17212b; }
+      form, main { width: min(380px, calc(100vw - 32px)); padding: 28px; background: white; border: 1px solid #d8dfe6; border-radius: 8px; box-shadow: 0 12px 34px #17212b12; }
+      h1 { margin: 0 0 20px; font-size: 22px; }
+      label, button { display: block; width: 100%; }
+      label { margin-bottom: 14px; font-weight: 650; }
+      input { width: 100%; height: 40px; margin-top: 6px; padding: 0 10px; border: 1px solid #c9d1d8; border-radius: 6px; box-sizing: border-box; }
+      button { height: 40px; margin-top: 8px; border: 0; border-radius: 6px; background: #2563eb; color: white; font-size: 15px; cursor: pointer; }
+      p { color: #5f6b77; }
+    </style>
+  </head>
+  <body>
+    <form method="get" action="/demo/success.html">
+      <h1>演示登录</h1>
+      <label>邮箱 <input name="email" type="email" value="user@example.com" required /></label>
+      <label>密码 <input name="password" type="password" value="password" required /></label>
+      <button type="submit">登录</button>
+      <p>任何有效格式的账号密码都会进入成功页。</p>
+    </form>
+  </body>
+</html>
