@@ -1,145 +1,154 @@
 /**
- * 文件持久化层。
- * MVP 使用 JSON 降低部署依赖；数据写入串行化，避免多个 API 请求互相覆盖。
+ * 数据持久化层。
+ * 使用 SQLite（better-sqlite3 + drizzle-orm）替代 JSON 文件；
+ * 对上层保持与 v0.3 完全一致的 API 签名，调用方无需改动。
  */
 
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type {
-  AutomationTask,
-  PlatformState,
-  TaskExecution,
-} from "./types";
+import { desc, eq } from "drizzle-orm";
+import { db } from "./db";
+import { executions as executionsTable, tasks as tasksTable } from "./db/schema";
+import type { AutomationTask, TaskExecution } from "./types";
 
-const dataDir = path.join(process.cwd(), "data");
-const stateFile = path.join(dataDir, "platform.json");
-
-/** 所有读改写操作进入同一条 Promise 链，保证单进程内的顺序一致性。 */
-let mutationChain: Promise<unknown> = Promise.resolve();
-/** 只在进程首次读取时恢复异常停机状态；后续读取不能打断活动任务。 */
+/**
+ * 服务重启后恢复异常停机状态。
+ * queued/running 无法跨进程继续，统一标记为 interrupted。
+ * 只在模块首次加载时执行一次；后续调用不重复扫描。
+ */
 let recoveryDone = false;
-
-async function ensureDataDir(): Promise<void> {
-  await fs.mkdir(dataDir, { recursive: true });
-}
-
-function emptyState(): PlatformState {
-  return { version: 1, tasks: [], executions: [] };
-}
-
-async function readState(): Promise<PlatformState> {
-  try {
-    const raw = await fs.readFile(stateFile, "utf8");
-    const parsed = JSON.parse(raw) as PlatformState;
-    if (!recoveryDone) {
-      recoveryDone = true;
-      // 兼容异常停机：queued/running 状态无法跨进程恢复，统一标记为 interrupted。
-      parsed.executions = (parsed.executions ?? []).map((execution) =>
-        execution.status === "running" || execution.status === "queued"
-          ? { ...execution, status: "interrupted", error: "服务重启导致执行中断" }
-          : execution,
-      );
-      if (parsed.executions.some((execution) => execution.status === "interrupted")) {
-        await writeState(parsed);
-      }
-    }
-    return parsed;
-  } catch (error) {
-    recoveryDone = true;
-    // 只有“文件不存在”代表空平台；JSON 损坏或读取失败必须抛出，防止后续修改把历史状态覆盖为空库。
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return emptyState();
-    }
-    throw error;
+async function recoverInterruptedExecutions(): Promise<void> {
+  if (recoveryDone) return;
+  recoveryDone = true;
+  const active = await db
+    .select({ id: executionsTable.id })
+    .from(executionsTable)
+    .where(eq(executionsTable.status, "queued"));
+  const running = await db
+    .select({ id: executionsTable.id })
+    .from(executionsTable)
+    .where(eq(executionsTable.status, "running"));
+  for (const row of [...active, ...running]) {
+    await db
+      .update(executionsTable)
+      .set({ status: "interrupted", error: "服务重启导致执行中断" })
+      .where(eq(executionsTable.id, row.id));
   }
 }
 
-async function writeState(state: PlatformState): Promise<void> {
-  await ensureDataDir();
-  const tempFile = `${stateFile}.${randomUUID()}.tmp`;
-  await fs.writeFile(tempFile, JSON.stringify(state, null, 2), "utf8");
-  await fs.rename(tempFile, stateFile);
-}
-
-function mutate<T>(operation: (state: PlatformState) => Promise<T> | T) {
-  const result = mutationChain.then(async () => {
-    const state = await readState();
-    const output = await operation(state);
-    await writeState(state);
-    return output;
-  });
-  // 失败不能污染后续请求，但调用方仍会拿到原始错误。
-  mutationChain = result.catch(() => undefined);
-  return result;
-}
-
+// 模块加载时触发一次恢复；不阻塞导出，后续首次读取前会等待完成。
+const recoveryPromise = recoverInterruptedExecutions();
 export function newId(): string {
   return randomUUID();
 }
 
-export function listTasks(): Promise<AutomationTask[]> {
-  return readState().then((state) => state.tasks);
+/** drizzle 返回的行结构与领域模型字段名一致，直接断言即可；不需要额外映射层。 */
+export async function listTasks(): Promise<AutomationTask[]> {
+  await recoveryPromise;
+  const rows = await db.select().from(tasksTable);
+  return rows as AutomationTask[];
 }
 
-export function getTask(id: string): Promise<AutomationTask | undefined> {
-  return readState().then((state) => state.tasks.find((task) => task.id === id));
+export async function getTask(id: string): Promise<AutomationTask | undefined> {
+  await recoveryPromise;
+  const rows = await db
+    .select()
+    .from(tasksTable)
+    .where(eq(tasksTable.id, id))
+    .limit(1);
+  return (rows[0] as AutomationTask) ?? undefined;
 }
 
-export function saveTask(task: AutomationTask): Promise<AutomationTask> {
-  return mutate((state) => {
-    const index = state.tasks.findIndex((item) => item.id === task.id);
-    if (index === -1) state.tasks.push(task);
-    else state.tasks[index] = task;
-    return task;
-  });
+export async function saveTask(task: AutomationTask): Promise<AutomationTask> {
+  await recoveryPromise;
+  // insert ... onConflictDoUpdate 实现 upsert，不区分创建和更新两个调用路径。
+  await db
+    .insert(tasksTable)
+    .values(task)
+    .onConflictDoUpdate({
+      target: tasksTable.id,
+      set: {
+        name: task.name,
+        target: task.target,
+        runner: task.runner,
+        runtime: task.runtime,
+        description: task.description,
+        labels: task.labels,
+        headless: task.headless,
+        steps: task.steps,
+        updatedAt: task.updatedAt,
+      },
+    });
+  return task;
 }
 
-export function deleteTask(id: string): Promise<boolean> {
-  return mutate((state) => {
-    const before = state.tasks.length;
-    state.tasks = state.tasks.filter((task) => task.id !== id);
-    return state.tasks.length !== before;
-  });
+export async function deleteTask(id: string): Promise<boolean> {
+  await recoveryPromise;
+  const result = await db
+    .delete(tasksTable)
+    .where(eq(tasksTable.id, id))
+    .returning({ id: tasksTable.id });
+  return result.length > 0;
 }
 
-export function listExecutions(): Promise<TaskExecution[]> {
-  return readState().then((state) =>
-    [...state.executions].sort((a, b) => b.queuedAt.localeCompare(a.queuedAt)),
-  );
+export async function listExecutions(): Promise<TaskExecution[]> {
+  await recoveryPromise;
+  // 按入队时间倒序，与 JSON 版本的排序语义一致。
+  const rows = await db
+    .select()
+    .from(executionsTable)
+    .orderBy(desc(executionsTable.queuedAt));
+  return rows as TaskExecution[];
 }
 
-export function getExecution(
+export async function getExecution(
   id: string,
 ): Promise<TaskExecution | undefined> {
-  return readState().then(
-    (state) => state.executions.find((execution) => execution.id === id),
-  );
+  await recoveryPromise;
+  const rows = await db
+    .select()
+    .from(executionsTable)
+    .where(eq(executionsTable.id, id))
+    .limit(1);
+  return (rows[0] as TaskExecution) ?? undefined;
 }
 
-export function saveExecution(execution: TaskExecution): Promise<TaskExecution> {
-  return mutate((state) => {
-    const index = state.executions.findIndex(
-      (item) => item.id === execution.id,
-    );
-    if (index === -1) state.executions.push(execution);
-    else state.executions[index] = execution;
-    return execution;
+export async function saveExecution(
+  execution: TaskExecution,
+): Promise<TaskExecution> {
+  await recoveryPromise;
+  await db.insert(executionsTable).values(execution).onConflictDoUpdate({
+    target: executionsTable.id,
+    set: {
+      runner: execution.runner,
+      browser: execution.browser,
+      status: execution.status,
+      startedAt: execution.startedAt,
+      finishedAt: execution.finishedAt,
+      durationMs: execution.durationMs,
+      attempts: execution.attempts,
+      currentStep: execution.currentStep,
+      logs: execution.logs,
+      reportUrl: execution.reportUrl,
+      tracePath: execution.tracePath,
+      healing: execution.healing,
+      error: execution.error,
+    },
   });
+  return execution;
 }
 
-export function updateExecution(
+export async function updateExecution(
   id: string,
   updater: (execution: TaskExecution) => TaskExecution,
 ): Promise<TaskExecution | undefined> {
-  return mutate((state) => {
-    const execution = state.executions.find((item) => item.id === id);
-    if (!execution) return undefined;
-    Object.assign(execution, updater(execution));
-    return execution;
-  });
+  await recoveryPromise;
+  const current = await getExecution(id);
+  if (!current) return undefined;
+  const next = updater(current);
+  return saveExecution(next);
 }
 
+/** 仪表盘统计；用 SQL 聚合替代 JSON 版本的全量读取。 */
 export async function summarize(): Promise<{
   taskCount: number;
   executionCount: number;
@@ -149,28 +158,29 @@ export async function summarize(): Promise<{
   running: number;
   averageDurationMs: number;
 }> {
-  const state = await readState();
-  const completed = state.executions.filter(
-    (execution) =>
-      execution.status === "succeeded" || execution.status === "failed",
+  await recoveryPromise;
+
+  const allTasks = await db.select({ id: tasksTable.id }).from(tasksTable);
+  const allExecutions = await db
+    .select({ status: executionsTable.status, durationMs: executionsTable.durationMs })
+    .from(executionsTable);
+
+  const completed = allExecutions.filter(
+    (e) => e.status === "succeeded" || e.status === "failed",
   );
   const durations = completed
-    .map((execution) => execution.durationMs ?? 0)
-    .filter((duration) => duration > 0);
+    .map((e) => e.durationMs ?? 0)
+    .filter((d) => d > 0);
+
   return {
-    taskCount: state.tasks.length,
-    executionCount: state.executions.length,
-    succeeded: state.executions.filter((item) => item.status === "succeeded")
-      .length,
-    failed: state.executions.filter((item) => item.status === "failed").length,
-    queued: state.executions.filter((item) => item.status === "queued").length,
-    running: state.executions.filter((item) => item.status === "running")
-      .length,
+    taskCount: allTasks.length,
+    executionCount: allExecutions.length,
+    succeeded: allExecutions.filter((e) => e.status === "succeeded").length,
+    failed: allExecutions.filter((e) => e.status === "failed").length,
+    queued: allExecutions.filter((e) => e.status === "queued").length,
+    running: allExecutions.filter((e) => e.status === "running").length,
     averageDurationMs: durations.length
-      ? Math.round(
-          durations.reduce((total, duration) => total + duration, 0) /
-            durations.length,
-        )
+      ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
       : 0,
   };
 }
