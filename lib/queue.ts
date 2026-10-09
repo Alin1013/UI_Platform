@@ -4,6 +4,7 @@
  */
 
 import type { TaskExecution } from "./types";
+import type { RunnerArtifacts } from "./executor";
 import {
   getTask,
   listExecutions,
@@ -75,38 +76,98 @@ async function runOne(executionId: string): Promise<void> {
     return;
   }
 
+  const runner = task.runner ?? "playwright";
+  const browser = task.runtime?.browser ?? "chromium";
+  const maxAttempts = Math.min(4, Math.max(1, (task.runtime?.retries ?? 0) + 1));
+  let artifacts: RunnerArtifacts = {};
+
   try {
-    const logs = await executeWebTask(task, executionId, async (log) => {
-      // 增量写入让 UI 轮询到每步结果；失败时后续更新只补最终状态，不覆盖这些日志。
-      await updateExecution(executionId, (execution) => ({
-        ...execution,
-        logs: [...execution.logs, log],
-        currentStep: log.index,
-      }));
-    });
-    // 成功落盘前再查一次任务；覆盖“浏览器流程刚好在最后一个步骤后任务被删除”的竞态。
-    const currentTask = await getTask(taskId);
-    if (!currentTask) {
-      throw new Error("关联任务已被删除");
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let logs: TaskExecution["logs"] = [];
+      try {
+        logs = await executeWebTask(task, executionId, {
+          attempt,
+          onStepLog: async (log) => {
+            // 增量写入让 UI 轮询到每步结果；失败时后续更新只补最终状态，不覆盖这些日志。
+            await updateExecution(executionId, (execution) => ({
+              ...execution,
+              logs: [...execution.logs, log],
+              currentStep: log.index,
+            }));
+          },
+          onArtifacts: async (nextArtifacts) => {
+            artifacts = nextArtifacts;
+            await updateExecution(executionId, (execution) => ({
+              ...execution,
+              ...nextArtifacts,
+            }));
+          },
+        });
+
+        // 成功落盘前再查一次任务；覆盖“浏览器流程刚好在最后一个步骤后任务被删除”的竞态。
+        const currentTask = await getTask(taskId);
+        if (!currentTask) {
+          throw new Error("关联任务已被删除");
+        }
+        const finishedAt = new Date().toISOString();
+        await updateExecution(executionId, (execution) => ({
+          ...execution,
+          status: "succeeded",
+          finishedAt,
+          runner,
+          browser,
+          attempts: attempt,
+          durationMs:
+            execution.startedAt
+              ? Date.now() - new Date(execution.startedAt).getTime()
+              : undefined,
+          currentStep: task.steps.length,
+          logs,
+        }));
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // 任务取消不是瞬态失败，重试只会延长用户等待；其他失败按配置进行有限重试。
+        const shouldRetry =
+          attempt < maxAttempts && !message.includes("任务已删除，执行已取消");
+        if (shouldRetry) {
+          await updateExecution(executionId, (execution) => ({
+            ...execution,
+            attempts: attempt,
+            // 旧尝试的截图文件会被下一次尝试复用；保留完整多 attempt 历史需要报告存储升级。
+            logs: [],
+            currentStep: 0,
+            error: `第 ${attempt} 次尝试失败，准备重试：${message}`,
+          }));
+          continue;
+        }
+
+        const finishedAt = new Date().toISOString();
+        await updateExecution(executionId, (execution) => ({
+          ...execution,
+          status: "failed",
+          finishedAt,
+          runner,
+          browser,
+          attempts: attempt,
+          durationMs:
+            execution.startedAt
+              ? Date.now() - new Date(execution.startedAt).getTime()
+              : undefined,
+          error: message,
+        }));
+        return;
+      }
     }
-    const finishedAt = new Date().toISOString();
-    await updateExecution(executionId, (execution) => ({
-      ...execution,
-      status: "succeeded",
-      finishedAt,
-      durationMs:
-        execution.startedAt
-          ? Date.now() - new Date(execution.startedAt).getTime()
-          : undefined,
-      currentStep: task.steps.length,
-      logs,
-    }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await updateExecution(executionId, (execution) => ({
       ...execution,
       status: "failed",
       finishedAt: new Date().toISOString(),
+      runner,
+      browser,
+      ...artifacts,
       durationMs:
         execution.startedAt
           ? Date.now() - new Date(execution.startedAt).getTime()
@@ -155,6 +216,8 @@ export async function enqueueExecution(
   const execution: TaskExecution = {
     id: crypto.randomUUID(),
     taskId,
+    runner: task.runner ?? "playwright",
+    browser: task.runtime?.browser ?? "chromium",
     status: "queued",
     queuedAt: new Date().toISOString(),
     totalSteps: task.steps.length,

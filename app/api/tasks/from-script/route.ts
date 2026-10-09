@@ -23,6 +23,8 @@ export async function POST(request: Request) {
     const draft = parseTaskDraft({
       name,
       target: "web",
+      runner: body.runner ?? "playwright",
+      runtime: body.runtime,
       description: "由自然语言脚本生成的测试用例。",
       labels: ["自然语言"],
       headless: body.headless == null ? true : body.headless,

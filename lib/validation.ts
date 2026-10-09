@@ -1,6 +1,11 @@
 /** 任务定义校验：把不可信的 API 输入收敛为稳定的执行模型。 */
 
-import type { AutomationStep, AutomationTask } from "./types";
+import type {
+  AutomationRuntime,
+  AutomationStep,
+  AutomationTask,
+  RunnerId,
+} from "./types";
 
 const actions = new Set([
   "goto",
@@ -9,7 +14,58 @@ const actions = new Set([
   "press",
   "wait",
   "expectText",
+  "aiAct",
+  "aiAssert",
+  "aiQuery",
+  "aiWaitFor",
 ]);
+
+const browsers = new Set(["chromium", "firefox", "webkit"]);
+
+/** Runner 是执行语义的分叉点；旧请求不传时继续使用 Playwright，保持 v0.1 兼容。 */
+function parseRunner(value: unknown): RunnerId {
+  if (value == null) return "playwright";
+  const runner = String(value);
+  if (runner !== "playwright" && runner !== "midscene") {
+    throw new Error("runner 只支持 playwright 或 midscene");
+  }
+  return runner;
+}
+
+/** runtime 只开放少量单机可控行为，避免把 Playwright 全部能力直接暴露给不可信 API。 */
+function parseRuntime(value: unknown): AutomationRuntime | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("runtime 必须是对象");
+  }
+  const raw = value as Record<string, unknown>;
+  const runtime: AutomationRuntime = {};
+
+  if (raw.browser != null) {
+    const browser = String(raw.browser);
+    if (!browsers.has(browser)) {
+      throw new Error("runtime.browser 只支持 chromium、firefox 或 webkit");
+    }
+    runtime.browser = browser as AutomationRuntime["browser"];
+  }
+
+  if (raw.retries != null) {
+    const retries = Number(raw.retries);
+    if (!Number.isInteger(retries) || retries < 0 || retries > 3) {
+      throw new Error("runtime.retries 必须是 0 到 3 的整数");
+    }
+    runtime.retries = retries;
+  }
+
+  if (raw.trace != null) {
+    if (typeof raw.trace !== "boolean" && raw.trace !== "true" && raw.trace !== "false") {
+      throw new Error("runtime.trace 必须是布尔值");
+    }
+    runtime.trace = raw.trace === true || raw.trace === "true";
+  }
+
+  return Object.keys(runtime).length ? runtime : undefined;
+}
 
 /** 可选文本字段保留原文；只有确实传入 null/undefined 时才视为缺省。 */
 function optionalText(value: unknown): string | undefined {
@@ -37,6 +93,8 @@ function parseLabels(value: unknown): string[] {
 export interface TaskDraft {
   name: string;
   target: "web";
+  runner: RunnerId;
+  runtime?: AutomationRuntime;
   description?: string;
   labels: string[];
   headless: boolean;
@@ -58,6 +116,8 @@ export function parseTaskDraft(input: unknown): TaskDraft {
   if (!Array.isArray(raw.steps) || raw.steps.length === 0) {
     throw new Error("任务至少需要一个步骤");
   }
+  const runner = parseRunner(raw.runner);
+  const runtime = parseRuntime(raw.runtime);
 
   const steps = raw.steps.map((item, index): AutomationStep => {
     if (!item || typeof item !== "object") {
@@ -71,6 +131,12 @@ export function parseTaskDraft(input: unknown): TaskDraft {
     const normalized: AutomationStep = { action: action as AutomationStep["action"] };
     if (step.target != null) normalized.target = optionalText(step.target);
     if (step.value != null) normalized.value = optionalText(step.value);
+    if (step.schema != null) {
+      if (typeof step.schema !== "object" || Array.isArray(step.schema)) {
+        throw new Error(`第 ${index + 1} 个步骤的 schema 必须是对象`);
+      }
+      normalized.schema = step.schema as Record<string, unknown>;
+    }
     if (step.timeout != null) {
       normalized.timeout = Number(step.timeout);
       if (!Number.isFinite(normalized.timeout) || normalized.timeout <= 0) {
@@ -106,6 +172,23 @@ export function parseTaskDraft(input: unknown): TaskDraft {
           throw new Error(`第 ${index + 1} 个步骤的 action=expectText 必须提供 value`);
         }
         break;
+      case "aiAct":
+      case "aiAssert":
+      case "aiWaitFor":
+        if (!normalized.value) {
+          throw new Error(`第 ${index + 1} 个步骤的 action=${normalized.action} 必须提供 value`);
+        }
+        break;
+      case "aiQuery":
+        if (!normalized.schema) {
+          throw new Error(`第 ${index + 1} 个步骤的 action=aiQuery 必须提供 schema`);
+        }
+        break;
+    }
+
+    // AI 动作依赖模型语义定位；约束在 Midscene Runner，避免 Playwright 适配器出现隐式分叉。
+    if (runner !== "midscene" && normalized.action.startsWith("ai")) {
+      throw new Error(`runner=playwright 不支持 AI 动作 ${normalized.action}`);
     }
 
     return normalized;
@@ -114,6 +197,8 @@ export function parseTaskDraft(input: unknown): TaskDraft {
   return {
     name,
     target: "web",
+    runner,
+    runtime,
     description: optionalText(raw.description),
     labels: parseLabels(raw.labels),
     headless: parseHeadless(raw.headless),

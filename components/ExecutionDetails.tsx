@@ -57,6 +57,7 @@ export function ExecutionDetails({
     : execution.totalSteps
       ? Math.round((completed / execution.totalSteps) * 100)
       : 0;
+  const runnerLabel = execution.runner === "midscene" ? "Midscene AI" : "Playwright";
 
   return (
     <>
@@ -64,7 +65,9 @@ export function ExecutionDetails({
         <div className="panel-header">
           <div>
             <div className="panel-title">{task?.name ?? "未知任务"}</div>
-            <span className="muted">Execution {execution.id}</span>
+            <span className="muted">
+              {runnerLabel} · {execution.browser ?? "chromium"} · 尝试 {execution.attempts ?? 1} 次
+            </span>
           </div>
           <StatusBadge status={execution.status} />
         </div>
@@ -93,6 +96,28 @@ export function ExecutionDetails({
             <div className="progress-bar" style={{ width: `${progress}%` }} />
           </div>
           {execution.error ? <p className="error-text">{execution.error}</p> : null}
+          {execution.reportUrl || execution.tracePath ? (
+            <div className="toolbar" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+              {execution.reportUrl ? (
+                <a
+                  className="button small"
+                  href={`/api/executions/${execution.id}/artifacts/${execution.reportUrl}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  查看 Midscene 报告
+                </a>
+              ) : null}
+              {execution.tracePath ? (
+                <a
+                  className="button small"
+                  href={`/api/executions/${execution.id}/artifacts/${execution.tracePath}`}
+                >
+                  下载 Trace
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -110,9 +135,19 @@ export function ExecutionDetails({
                 {execution.logs.map((log) => (
                   <li key={log.index} className={`log-item ${log.status}`}>
                     <strong>{log.index}</strong>
-                    <span>{log.action}</span>
+                    <span>
+                      {log.action}
+                      <small className="muted" style={{ display: "block" }}>
+                        {log.runner === "midscene" ? "Midscene" : "Playwright"} ·{" "}
+                        {log.kind ?? "deterministic"}
+                        {log.selector ? ` · ${log.selector}` : ""}
+                      </small>
+                    </span>
                     <span className="muted log-status">
                       {log.message ?? (log.status === "passed" ? "通过" : "失败")}
+                      {log.aiResult == null
+                        ? ""
+                        : ` · ${typeof log.aiResult === "string" ? log.aiResult : JSON.stringify(log.aiResult)}`}
                     </span>
                     <span>{formatDuration(log.durationMs)}</span>
                   </li>

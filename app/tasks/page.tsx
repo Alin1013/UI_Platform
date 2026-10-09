@@ -115,7 +115,12 @@ export default function TasksPage() {
                     <strong>{task.name}</strong>
                     {task.description ? <p className="muted" style={{ margin: "4px 0 0" }}>{task.description}</p> : null}
                   </td>
-                  <td>Web / Chromium</td>
+                  <td>
+                    Web / {task.runner === "midscene" ? "Midscene" : "Playwright"}
+                    <p className="muted" style={{ margin: "4px 0 0" }}>
+                      {task.runtime?.browser ?? "chromium"}
+                    </p>
+                  </td>
                   <td>{task.steps.length}</td>
                   <td>{task.labels.join("、") || "-"}</td>
                   <td>

@@ -33,6 +33,8 @@ export function createTaskFromScript(input: {
   name: string;
   script: string;
   headless: boolean;
+  runner?: AutomationTask["runner"];
+  runtime?: AutomationTask["runtime"];
 }) {
   return requestJson<{ task: AutomationTask; execution: TaskExecution }>(
     "/api/tasks/from-script",

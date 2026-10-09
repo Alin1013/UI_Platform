@@ -81,6 +81,7 @@ export default function ReportsPage() {
             <thead>
               <tr>
                 <th>任务</th>
+                <th>引擎</th>
                 <th>状态</th>
                 <th>步骤</th>
                 <th>开始时间</th>
@@ -91,6 +92,7 @@ export default function ReportsPage() {
               {filtered.map((execution) => (
                 <tr key={execution.id}>
                   <td>{taskName(execution.taskId)}</td>
+                  <td>{execution.runner === "midscene" ? "Midscene" : "Playwright"}</td>
                   <td>
                     <StatusBadge status={execution.status} />
                   </td>

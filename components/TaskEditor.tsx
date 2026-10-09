@@ -10,6 +10,8 @@ import { createTask, updateTask } from "@/lib/client";
 
 interface StepDraft extends AutomationStep {
   key: string;
+  /** aiQuery 用 JSON 编辑；提交时统一解析成 schema 对象。 */
+  schemaText?: string;
 }
 
 const actionOptions: Array<{ value: AutomationAction; label: string }> = [
@@ -19,7 +21,22 @@ const actionOptions: Array<{ value: AutomationAction; label: string }> = [
   { value: "press", label: "按键" },
   { value: "wait", label: "等待" },
   { value: "expectText", label: "断言文本" },
+  { value: "aiAct", label: "AI 操作" },
+  { value: "aiAssert", label: "AI 断言" },
+  { value: "aiQuery", label: "AI 提取" },
+  { value: "aiWaitFor", label: "AI 等待" },
 ];
+
+const runnerOptions = [
+  { value: "playwright", label: "Playwright（确定性）" },
+  { value: "midscene", label: "Midscene（AI）" },
+] as const;
+
+const browserOptions = [
+  { value: "chromium", label: "Chromium" },
+  { value: "firefox", label: "Firefox" },
+  { value: "webkit", label: "WebKit" },
+] as const;
 
 function stepKey(): string {
   return `${Date.now()}-${Math.random()}`;
@@ -31,9 +48,15 @@ function draftFromTask(task?: AutomationTask | null) {
     description: task?.description ?? "",
     labels: task?.labels.join(", ") ?? "",
     headless: task?.headless ?? true,
+    runner: task?.runner ?? "playwright",
+    runtime: task?.runtime ?? {},
     steps: (task?.steps ?? [
       { action: "goto" as AutomationAction, value: "/demo/login.html" },
-    ]).map((step) => ({ ...step, key: stepKey() })),
+    ]).map((step) => ({
+      ...step,
+      key: stepKey(),
+      schemaText: step.schema ? JSON.stringify(step.schema, null, 2) : undefined,
+    })),
   };
 }
 
@@ -56,10 +79,44 @@ export function TaskEditor({
     setError("");
   }, [task]);
 
-  function updateStep(index: number, key: keyof AutomationStep, value: string) {
+  function updateStep(index: number, key: "target" | "value", value: string) {
     setDraft((current) => {
       const steps = [...current.steps];
       steps[index] = { ...steps[index], [key]: value };
+      return { ...current, steps };
+    });
+  }
+
+  function updateTimeout(index: number, value: string) {
+    setDraft((current) => {
+      const steps = [...current.steps];
+      const timeout = value === "" ? undefined : Number(value);
+      steps[index] = {
+        ...steps[index],
+        timeout: timeout && Number.isFinite(timeout) ? timeout : undefined,
+      };
+      return { ...current, steps };
+    });
+  }
+
+  function updateSchema(index: number, value: string) {
+    setDraft((current) => {
+      const steps = [...current.steps];
+      steps[index] = { ...steps[index], schemaText: value };
+      return { ...current, steps };
+    });
+  }
+
+  /** 切换动作时清理不相关字段，避免保存出 target/value/schema 互相矛盾的历史数据。 */
+  function changeAction(index: number, action: AutomationAction) {
+    setDraft((current) => {
+      const steps = [...current.steps];
+      steps[index] = {
+        ...steps[index],
+        action,
+        schema: action === "aiQuery" ? steps[index].schema : undefined,
+        schemaText: action === "aiQuery" ? steps[index].schemaText : undefined,
+      };
       return { ...current, steps };
     });
   }
@@ -72,6 +129,11 @@ export function TaskEditor({
       const payload = {
         name: draft.name,
         target: "web",
+        runner: draft.runner,
+        runtime: {
+          ...draft.runtime,
+          retries: draft.runtime.retries == null ? undefined : Number(draft.runtime.retries),
+        },
         description: draft.description || undefined,
         labels: draft.labels
           .split(",")
@@ -79,11 +141,10 @@ export function TaskEditor({
           .filter(Boolean),
         headless: draft.headless,
         // 表单里的空值统一剔除，避免把 "undefined" 字符串传给 Playwright。
-        steps: draft.steps.map(({ key: _key, ...step }) =>
-          Object.fromEntries(
-            Object.entries(step).filter(([, value]) => value !== "" && value != null),
-          ),
-        ),
+        steps: draft.steps.map(({ key: _key, schemaText, ...step }) => {
+          if (step.action !== "aiQuery") return step;
+          return { ...step, schema: JSON.parse(schemaText || "{}") };
+        }),
       };
       if (task) await updateTask(task.id, payload);
       else await createTask(payload);
@@ -130,7 +191,76 @@ export function TaskEditor({
               checked={draft.headless}
               onChange={(event) => setDraft({ ...draft, headless: event.target.checked })}
             />
-            无头模式运行 Chromium
+            无头模式运行
+          </label>
+        </div>
+        <div className="field">
+          <label htmlFor="task-runner">执行引擎</label>
+          <select
+            id="task-runner"
+            value={draft.runner}
+            onChange={(event) =>
+              setDraft({ ...draft, runner: event.target.value as typeof draft.runner })
+            }
+          >
+            {runnerOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="task-browser">浏览器</label>
+          <select
+            id="task-browser"
+            value={draft.runtime.browser ?? "chromium"}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                runtime: {
+                  ...draft.runtime,
+                  browser: event.target.value as typeof draft.runtime.browser,
+                },
+              })
+            }
+          >
+            {browserOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="task-retries">失败重试次数</label>
+          <input
+            id="task-retries"
+            type="number"
+            min={0}
+            max={3}
+            value={draft.runtime.retries ?? 0}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                runtime: { ...draft.runtime, retries: Number(event.target.value) },
+              })
+            }
+          />
+        </div>
+        <div className="field">
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={draft.runtime.trace ?? false}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  runtime: { ...draft.runtime, trace: event.target.checked },
+                })
+              }
+            />
+            保存 Playwright trace
           </label>
         </div>
       </div>
@@ -143,7 +273,9 @@ export function TaskEditor({
               <span className="step-index">{index + 1}</span>
               <select
                 value={step.action}
-                onChange={(event) => updateStep(index, "action", event.target.value)}
+                onChange={(event) =>
+                  changeAction(index, event.target.value as AutomationAction)
+                }
                 aria-label={`步骤 ${index + 1} 动作`}
               >
                 {actionOptions.map((option) => (
@@ -152,33 +284,56 @@ export function TaskEditor({
                   </option>
                 ))}
               </select>
-              <input
-                className="step-action-value"
-                value={step.target ?? ""}
-                placeholder={step.action === "goto" ? "可不填" : "Playwright 定位器"}
-                onChange={(event) => updateStep(index, "target", event.target.value)}
-                aria-label={`步骤 ${index + 1} 目标`}
-              />
-              <input
-                className="step-action-value"
-                value={step.value ?? ""}
-                placeholder={
-                  step.action === "goto"
-                    ? "/demo/login.html 或完整 URL"
-                    : step.action === "wait"
-                      ? "毫秒"
-                      : "输入值或期望文本"
-                }
-                onChange={(event) => updateStep(index, "value", event.target.value)}
-                aria-label={`步骤 ${index + 1} 值`}
-              />
+              {step.action === "aiQuery" ? (
+                <textarea
+                  className="step-action-value script-textarea"
+                  rows={3}
+                  value={step.schemaText ?? ""}
+                  placeholder='{"title": "页面标题"}'
+                  onChange={(event) => updateSchema(index, event.target.value)}
+                  aria-label={`步骤 ${index + 1} 提取 Schema`}
+                />
+              ) : (
+                <>
+                  <input
+                    className="step-action-value"
+                    value={step.target ?? ""}
+                    placeholder={
+                      draft.runner === "midscene"
+                        ? step.action === "goto" || step.action === "wait"
+                          ? "可不填"
+                          : "语义目标，如 登录按钮"
+                        : step.action === "goto"
+                          ? "可不填"
+                          : "Playwright 定位器"
+                    }
+                    onChange={(event) => updateStep(index, "target", event.target.value)}
+                    aria-label={`步骤 ${index + 1} 目标`}
+                  />
+                  <input
+                    className="step-action-value"
+                    value={step.value ?? ""}
+                    placeholder={
+                      step.action === "goto"
+                        ? "/demo/login.html 或完整 URL"
+                        : step.action === "wait"
+                          ? "毫秒"
+                          : step.action.startsWith("ai")
+                            ? "自然语言指令或断言"
+                            : "输入值或期望文本"
+                    }
+                    onChange={(event) => updateStep(index, "value", event.target.value)}
+                    aria-label={`步骤 ${index + 1} 值`}
+                  />
+                </>
+              )}
               <input
                 type="number"
                 min={100}
                 step={100}
                 value={step.timeout ?? ""}
                 placeholder="超时"
-                onChange={(event) => updateStep(index, "timeout", event.target.value)}
+                onChange={(event) => updateTimeout(index, event.target.value)}
                 aria-label={`步骤 ${index + 1} 超时毫秒`}
               />
               <button
@@ -202,7 +357,10 @@ export function TaskEditor({
             onClick={() =>
               setDraft((current) => ({
                 ...current,
-                steps: [...current.steps, { action: "click", key: stepKey() }],
+                steps: [
+                  ...current.steps,
+                  { action: "click", key: stepKey(), schemaText: undefined },
+                ],
               }))
             }
           >

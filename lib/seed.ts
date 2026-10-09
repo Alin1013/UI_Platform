@@ -10,6 +10,8 @@ export async function ensureSeedTask(): Promise<void> {
   const draft = parseTaskDraft({
     name: "登录表单示例",
     target: "web",
+    runner: "playwright",
+    runtime: { browser: "chromium", retries: 0, trace: false },
     description: "使用平台内置演示页验证 Web 执行链路。",
     labels: ["示例", "Web"],
     headless: true,

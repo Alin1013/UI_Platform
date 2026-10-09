@@ -21,6 +21,7 @@ export function ScriptTaskForm() {
   const [name, setName] = useState("自然语言登录用例");
   const [script, setScript] = useState(defaultScript);
   const [headless, setHeadless] = useState(true);
+  const [runner, setRunner] = useState<"playwright" | "midscene">("playwright");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,7 +30,13 @@ export function ScriptTaskForm() {
     setBusy(true);
     setError("");
     try {
-      const result = await createTaskFromScript({ name, script, headless });
+      const result = await createTaskFromScript({
+        name,
+        script,
+        headless,
+        runner,
+        runtime: { browser: "chromium", retries: 0, trace: false },
+      });
       router.push(`/executions?focus=${result.execution.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "生成并执行失败");
@@ -76,6 +83,19 @@ export function ScriptTaskForm() {
               />
               无头模式执行
             </label>
+          </div>
+          <div className="field">
+            <label htmlFor="script-runner">执行引擎</label>
+            <select
+              id="script-runner"
+              value={runner}
+              onChange={(event) =>
+                setRunner(event.target.value as "playwright" | "midscene")
+              }
+            >
+              <option value="playwright">Playwright（确定性）</option>
+              <option value="midscene">Midscene（AI）</option>
+            </select>
           </div>
         </div>
         <p className="error-text">{error}</p>
