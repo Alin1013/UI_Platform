@@ -1,8 +1,9 @@
 node_modules/
 .next/
 out/
-data/
-reports/
+# 根目录的运行数据与报告产物不入库；用前缀防止误忽略 app/reports 页面源码。
+/data/
+/reports/
 .env
 .env.local
 *.tsbuildinfo
