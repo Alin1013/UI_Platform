@@ -385,6 +385,45 @@ main {
   white-space: nowrap;
 }
 
+/*
+ * 修复建议是独立的操作证据，不混入执行日志；
+ * 用纵向卡片列表避免长定位器和修复理由被表格列宽截断。
+ */
+.healing-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.healing-item {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafbfc;
+}
+
+.healing-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.healing-target {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .healing-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
 .screenshot {
   display: block;
   width: 100%;

@@ -9,6 +9,7 @@ import type { AutomationTask } from "@/lib/types";
 import { loadTasks, removeTask, runTask } from "@/lib/client";
 import { TaskEditor } from "@/components/TaskEditor";
 import { ScriptTaskForm } from "@/components/ScriptTaskForm";
+import { AiTaskForm } from "@/components/AiTaskForm";
 
 export default function TasksPage() {
   const router = useRouter();
@@ -62,7 +63,9 @@ export default function TasksPage() {
         <div>
           <h1>任务管理</h1>
           <p>用结构化步骤定义 Web 自动化流程，保持执行可复现。</p>
-          <p className="muted" style={{ margin: 0 }}>自然语言可生成测试用例并直接执行。</p>
+          <p className="muted" style={{ margin: 0 }}>
+            规则脚本可直接执行；AI 生成结果需预览确认后保存。
+          </p>
         </div>
         <button className="button primary" onClick={() => setEditing(null)}>
           <Plus size={16} aria-hidden />
@@ -87,8 +90,10 @@ export default function TasksPage() {
         </section>
       ) : null}
 
-      <div style={{ marginBottom: 16 }}>
+      {/* 两个创建入口并列展示：规则解析适合固定话术，AI 生成适合开放业务需求。 */}
+      <div className="form-grid" style={{ marginBottom: 16 }}>
         <ScriptTaskForm />
+        <AiTaskForm onSaved={refresh} />
       </div>
 
       <p className="error-text">{message}</p>

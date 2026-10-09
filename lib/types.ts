@@ -105,7 +105,28 @@ export interface TaskExecution {
   reportUrl?: string;
   /** Playwright trace 的 artifact 文件名。 */
   tracePath?: string;
+  /** 人工确认式修复建议；平台不会因为生成建议而自动改任务。 */
+  healing?: HealingCandidate[];
   error?: string;
+}
+
+export type HealingStatus = "proposed" | "applied" | "rejected";
+
+/** 一次定位器失败对应的候选修复；必须由用户确认后才写回任务。 */
+export interface HealingCandidate {
+  id: string;
+  executionId: string;
+  taskId: string;
+  stepIndex: number;
+  action: AutomationAction;
+  originalTarget: string;
+  healedTarget: string;
+  reason: string;
+  /** 0-1；模型自评置信度只做排序参考，不作为自动应用条件。 */
+  confidence: number;
+  screenshot?: string;
+  status: HealingStatus;
+  createdAt: string;
 }
 
 export interface PlatformState {

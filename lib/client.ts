@@ -1,6 +1,7 @@
 /** 浏览器端 API 客户端：统一错误读取和时间展示。 */
 
-import type { AutomationTask, TaskExecution } from "./types";
+import type { AutomationTask, HealingCandidate, TaskExecution } from "./types";
+import type { TaskDraft } from "./validation";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -57,6 +58,39 @@ export function runTask(id: string) {
   return requestJson<{ execution: TaskExecution }>(`/api/tasks/${id}/run`, {
     method: "POST",
   });
+}
+
+/** 请求 AI 生成任务草稿；调用方必须展示并让用户确认后才创建任务。 */
+export function generateTaskDraft(input: {
+  requirement: string;
+  targetUrl: string;
+  runner: AutomationTask["runner"];
+  name?: string;
+  save?: boolean;
+}) {
+  return requestJson<{ draft: TaskDraft; task?: AutomationTask }>(
+    "/api/tasks/generate",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+/** 请求为失败步骤生成定位器修复建议。 */
+export function generateHealing(executionId: string) {
+  return requestJson<{ healing: HealingCandidate }>(
+    `/api/executions/${executionId}/heal`,
+    { method: "POST" },
+  );
+}
+
+/** 应用用户确认的修复建议；只有这个动作会修改任务定义。 */
+export function applyHealing(
+  taskId: string,
+  input: { executionId: string; healingId: string },
+) {
+  return requestJson<{ task: AutomationTask; execution: TaskExecution }>(
+    `/api/tasks/${taskId}/apply-healing`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
 }
 
 export function loadExecutions() {

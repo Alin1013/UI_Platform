@@ -16,6 +16,13 @@ function ExecutionsView() {
   const [executions, setExecutions] = useState<TaskExecution[]>([]);
   const [selectedId, setSelectedId] = useState(initialFocus);
 
+  /** 自愈写回任务后只替换对应任务，避免整页重新拉取打断活动执行轮询。 */
+  function handleTaskUpdated(task: AutomationTask) {
+    setTasks((current) =>
+      current.map((item) => (item.id === task.id ? task : item)),
+    );
+  }
+
   useEffect(() => {
     let alive = true;
     async function load() {
@@ -78,7 +85,11 @@ function ExecutionsView() {
 
         <div>
           {selectedId ? (
-            <ExecutionDetails executionId={selectedId} tasks={tasks} />
+            <ExecutionDetails
+              executionId={selectedId}
+              tasks={tasks}
+              onTaskUpdated={handleTaskUpdated}
+            />
           ) : (
             <section className="panel">
               <div className="empty">选择左侧执行记录查看详情</div>

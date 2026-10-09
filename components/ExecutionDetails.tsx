@@ -3,21 +3,48 @@
  * 组件对进行中的执行自动轮询，完成后停止定时器并展示最终报告。
  */
 
-import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import type { AutomationTask, StepLog, TaskExecution } from "@/lib/types";
-import { formatDuration, formatTime, loadExecution } from "@/lib/client";
+import { useCallback, useEffect, useState } from "react";
+import { Check, RefreshCw, Wrench } from "lucide-react";
+import type {
+  AutomationTask,
+  HealingStatus,
+  StepLog,
+  TaskExecution,
+} from "@/lib/types";
+import {
+  applyHealing,
+  formatDuration,
+  formatTime,
+  generateHealing,
+  loadExecution,
+} from "@/lib/client";
 import { StatusBadge } from "./StatusBadge";
+
+/** 修复状态只展示用户可理解的中文；rejected 当前作为数据预留。 */
+function healingStatusLabel(status: HealingStatus) {
+  return status === "proposed" ? "待确认" : status === "applied" ? "已应用" : "已忽略";
+}
 
 export function ExecutionDetails({
   executionId,
   tasks,
+  onTaskUpdated,
 }: {
   executionId: string;
   tasks: AutomationTask[];
+  /** 任务定义被修复写回后通知父页面，避免任务名和后续编辑使用旧数据。 */
+  onTaskUpdated?: (task: AutomationTask) => void;
 }) {
   const [execution, setExecution] = useState<TaskExecution | null>(null);
   const [error, setError] = useState("");
+  const [healingError, setHealingError] = useState("");
+  const [healingBusy, setHealingBusy] = useState(false);
+  const [applyingId, setApplyingId] = useState("");
+
+  const refreshExecution = useCallback(async () => {
+    const payload = await loadExecution(executionId);
+    setExecution(payload.execution);
+  }, [executionId]);
 
   useEffect(() => {
     let alive = true;
@@ -58,6 +85,56 @@ export function ExecutionDetails({
       ? Math.round((completed / execution.totalSteps) * 100)
       : 0;
   const runnerLabel = execution.runner === "midscene" ? "Midscene AI" : "Playwright";
+  // 只对最后失败的确定性 click/fill 提供入口；这里和后端 findHealableFailure 的边界保持一致。
+  const healableFailure =
+    execution.status === "failed"
+      ? [...execution.logs]
+          .reverse()
+          .find(
+            (log) =>
+              log.status === "failed" &&
+              (log.action === "click" || log.action === "fill") &&
+              Boolean(log.selector),
+          )
+      : undefined;
+
+  async function handleGenerateHealing() {
+    if (!execution || !healableFailure) return;
+    setHealingBusy(true);
+    setHealingError("");
+    try {
+      await generateHealing(execution.id);
+      // 生成过程会在服务端重放并验证候选，必须重新读取完整 execution 才能看到持久化结果。
+      await refreshExecution();
+    } catch (caught) {
+      setHealingError(caught instanceof Error ? caught.message : "生成修复建议失败");
+    } finally {
+      setHealingBusy(false);
+    }
+  }
+
+  async function handleApplyHealing(healingId: string) {
+    if (!execution) return;
+    const sourceTask = tasks.find((item) => item.id === execution.taskId);
+    if (!sourceTask) {
+      setHealingError("关联任务不存在，无法应用修复");
+      return;
+    }
+    setApplyingId(healingId);
+    setHealingError("");
+    try {
+      const payload = await applyHealing(sourceTask.id, {
+        executionId: execution.id,
+        healingId,
+      });
+      setExecution(payload.execution);
+      onTaskUpdated?.(payload.task);
+    } catch (caught) {
+      setHealingError(caught instanceof Error ? caught.message : "应用修复失败");
+    } finally {
+      setApplyingId("");
+    }
+  }
 
   return (
     <>
@@ -186,6 +263,75 @@ export function ExecutionDetails({
           )}
         </section>
       </div>
+
+      {execution.status === "failed" && execution.runner !== "midscene" ? (
+        <section className="panel" style={{ marginTop: 16 }}>
+          <div className="panel-header">
+            <h2 className="panel-title">失败修复建议</h2>
+            {healableFailure ? (
+              <button
+                className="button small primary"
+                disabled={healingBusy}
+                onClick={() => void handleGenerateHealing()}
+              >
+                <Wrench size={14} aria-hidden />
+                {healingBusy ? "生成中" : "生成修复建议"}
+              </button>
+            ) : null}
+          </div>
+          <div className="panel-body">
+            <p className="muted" style={{ marginTop: 0 }}>
+              仅分析 Playwright click / fill 定位器失败；候选会在失败前步骤重放后验证可见性，确认应用前不会修改任务。
+            </p>
+            <p className="error-text">{healingError}</p>
+            {execution.healing?.length ? (
+              <ul className="healing-list">
+                {execution.healing.map((healing) => (
+                  <li className="healing-item" key={healing.id}>
+                    <div className="healing-heading">
+                      <strong>步骤 {healing.stepIndex} · {healing.action}</strong>
+                      <span className="muted">
+                        置信度 {(healing.confidence * 100).toFixed(0)}% ·{" "}
+                        {healingStatusLabel(healing.status)}
+                      </span>
+                    </div>
+                    <p className="healing-target" style={{ margin: "8px 0 0" }}>
+                      {healing.originalTarget} → {healing.healedTarget}
+                    </p>
+                    <p className="muted" style={{ margin: "8px 0 12px" }}>{healing.reason}</p>
+                    <div className="toolbar" style={{ justifyContent: "flex-start", marginBottom: 0 }}>
+                      {healing.screenshot ? (
+                        <a
+                          className="button small"
+                          href={`/api/executions/${execution.id}/artifacts/${healing.screenshot}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          查看失败截图
+                        </a>
+                      ) : null}
+                      {healing.status === "proposed" ? (
+                        <button
+                          className="button small primary"
+                          disabled={!task || applyingId === healing.id}
+                          onClick={() => void handleApplyHealing(healing.id)}
+                        >
+                          <Check size={14} aria-hidden />
+                          {applyingId === healing.id ? "应用中" : "应用修复"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : healableFailure ? (
+              <div className="empty">尚未生成修复建议</div>
+            ) : (
+              <div className="empty">当前失败没有可修复的 click / fill 定位器</div>
+            )}
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }

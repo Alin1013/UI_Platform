@@ -27,7 +27,8 @@ function requiredTarget(step: AutomationStep): string {
  * 解析语义化字段定位器。
  * 中文界面的控件含义常在 label、placeholder 或 aria-label 中，不能把字段名直接交给 CSS 引擎。
  */
-async function resolveLocator(page: Page, target: string) {
+/** 供失败自愈复用：候选定位器必须和正常执行走同一套解析规则。 */
+export async function resolveLocator(page: Page, target: string) {
   const fieldMatch = target.match(/^label=(.+)$/);
   if (!fieldMatch) return page.locator(target);
 

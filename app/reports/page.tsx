@@ -22,6 +22,13 @@ export default function ReportsPage() {
   const [statusFilter, setStatusFilter] = useState<ReportStatusFilter>("all");
   const [error, setError] = useState("");
 
+  /** 报告页应用修复建议后同步任务定义，保证后续报告标题和任务数据一致。 */
+  function handleTaskUpdated(task: AutomationTask) {
+    setTasks((current) =>
+      current.map((item) => (item.id === task.id ? task : item)),
+    );
+  }
+
   useEffect(() => {
     // 任务名和执行报告是同一视图的两个数据源，必须一起加载；失败要显式提示而不是误显示为空列表。
     async function load() {
@@ -120,7 +127,13 @@ export default function ReportsPage() {
         )}
       </section>
 
-      {selectedId ? <ExecutionDetails executionId={selectedId} tasks={tasks} /> : null}
+      {selectedId ? (
+        <ExecutionDetails
+          executionId={selectedId}
+          tasks={tasks}
+          onTaskUpdated={handleTaskUpdated}
+        />
+      ) : null}
     </>
   );
 }
