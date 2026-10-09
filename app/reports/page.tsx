@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { AutomationTask, TaskExecution } from "@/lib/types";
 import { loadExecutions, loadTasks } from "@/lib/client";
 import { ExecutionDetails } from "@/components/ExecutionDetails";
+import { StatusBadge } from "@/components/StatusBadge";
 
 export default function ReportsPage() {
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
@@ -66,7 +67,9 @@ export default function ReportsPage() {
               {filtered.map((execution) => (
                 <tr key={execution.id}>
                   <td>{tasks.find((task) => task.id === execution.taskId)?.name ?? "未知任务"}</td>
-                  <td>{execution.status}</td>
+                  <td>
+                    <StatusBadge status={execution.status} />
+                  </td>
                   <td>{execution.logs.length}/{execution.totalSteps}</td>
                   <td>{execution.startedAt ? new Date(execution.startedAt).toLocaleString("zh-CN") : "-"}</td>
                   <td>
