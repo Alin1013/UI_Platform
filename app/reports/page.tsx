@@ -8,22 +8,44 @@ import { loadExecutions, loadTasks } from "@/lib/client";
 import { ExecutionDetails } from "@/components/ExecutionDetails";
 import { StatusBadge } from "@/components/StatusBadge";
 
+type ReportStatusFilter = "all" | "succeeded" | "failed";
+
+/** 只接受下拉框声明过的选项，避免后续状态扩展时把任意字符串灌进筛选状态。 */
+function parseStatusFilter(value: string): ReportStatusFilter {
+  return value === "succeeded" || value === "failed" ? value : "all";
+}
+
 export default function ReportsPage() {
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
   const [executions, setExecutions] = useState<TaskExecution[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "succeeded" | "failed">("all");
+  const [statusFilter, setStatusFilter] = useState<ReportStatusFilter>("all");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([loadTasks(), loadExecutions()])
-      .then(([taskPayload, executionPayload]) => {
+    // 任务名和执行报告是同一视图的两个数据源，必须一起加载；失败要显式提示而不是误显示为空列表。
+    async function load() {
+      try {
+        const [taskPayload, executionPayload] = await Promise.all([
+          loadTasks(),
+          loadExecutions(),
+        ]);
         setTasks(taskPayload.tasks);
         setExecutions(executionPayload.executions);
         // 报告页默认展开最新一次运行，减少用户从任务页跳回后再找记录的成本。
         setSelectedId((current) => current || executionPayload.executions[0]?.id || "");
-      })
-      .catch(() => undefined);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "加载执行报告失败");
+      }
+    }
+
+    void load();
   }, []);
+
+  const taskName = (taskId: string) =>
+    tasks.find((task) => task.id === taskId)?.name ?? "未知任务";
+  const completedSteps = (execution: TaskExecution) =>
+    `${execution.logs.length}/${execution.totalSteps}`;
 
   const filtered = executions.filter(
     (execution) => statusFilter === "all" || execution.status === statusFilter,
@@ -42,7 +64,7 @@ export default function ReportsPage() {
         <select
           className="button"
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+          onChange={(event) => setStatusFilter(parseStatusFilter(event.target.value))}
           aria-label="按状态筛选报告"
         >
           <option value="all">全部状态</option>
@@ -50,6 +72,8 @@ export default function ReportsPage() {
           <option value="failed">失败</option>
         </select>
       </div>
+
+      <p className="error-text">{error}</p>
 
       <section className="panel" style={{ marginBottom: 16 }}>
         {filtered.length ? (
@@ -66,12 +90,16 @@ export default function ReportsPage() {
             <tbody>
               {filtered.map((execution) => (
                 <tr key={execution.id}>
-                  <td>{tasks.find((task) => task.id === execution.taskId)?.name ?? "未知任务"}</td>
+                  <td>{taskName(execution.taskId)}</td>
                   <td>
                     <StatusBadge status={execution.status} />
                   </td>
-                  <td>{execution.logs.length}/{execution.totalSteps}</td>
-                  <td>{execution.startedAt ? new Date(execution.startedAt).toLocaleString("zh-CN") : "-"}</td>
+                  <td>{completedSteps(execution)}</td>
+                  <td>
+                    {execution.startedAt
+                      ? new Date(execution.startedAt).toLocaleString("zh-CN")
+                      : "-"}
+                  </td>
                   <td>
                     <button
                       className="button small"
@@ -86,7 +114,7 @@ export default function ReportsPage() {
             </tbody>
           </table>
         ) : (
-          <div className="empty">当前筛选条件下没有报告</div>
+          <div className="empty">{error || "当前筛选条件下没有报告"}</div>
         )}
       </section>
 

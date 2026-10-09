@@ -393,6 +393,25 @@ main {
   background: #f1f3f5;
 }
 
+/*
+ * 报告证据按步骤纵向排列，保证每张截图都能和步骤序号、动作对应；
+ * 限制面板高度可避免长流程把失败原因挤出首屏。
+ */
+.screenshot-list {
+  max-height: 760px;
+  overflow: auto;
+}
+
+.screenshot-item {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.screenshot-caption {
+  font-size: 12px;
+}
+
 .muted {
   color: var(--muted);
 }

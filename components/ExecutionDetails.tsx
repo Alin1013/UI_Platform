@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import type { AutomationTask, TaskExecution } from "@/lib/types";
+import type { AutomationTask, StepLog, TaskExecution } from "@/lib/types";
 import { formatDuration, formatTime, loadExecution } from "@/lib/client";
 import { StatusBadge } from "./StatusBadge";
 
@@ -49,9 +49,9 @@ export function ExecutionDetails({
 
   const task = tasks.find((item) => item.id === execution.taskId);
   const completed = execution.logs.length;
-  const latestScreenshot = [...execution.logs]
-    .reverse()
-    .find((log) => log.screenshot);
+  const screenshots = execution.logs.filter(
+    (log): log is StepLog & { screenshot: string } => Boolean(log.screenshot),
+  );
   const progress = execution.status === "succeeded"
     ? 100
     : execution.totalSteps
@@ -126,15 +126,26 @@ export function ExecutionDetails({
 
         <section className="panel">
           <div className="panel-header">
-            <h2 className="panel-title">最新截图</h2>
+            <h2 className="panel-title">步骤截图</h2>
             <span className="muted">1280 × 720 viewport</span>
           </div>
-          {latestScreenshot?.screenshot ? (
-            <img
-              className="screenshot"
-              src={`/api/executions/${execution.id}/artifacts/${latestScreenshot.screenshot}`}
-              alt={`步骤 ${latestScreenshot.index} 的页面截图`}
-            />
+          {screenshots.length ? (
+            <div className="panel-body screenshot-list">
+              {screenshots.map((log) => (
+                <figure className="screenshot-item" key={log.index}>
+                  <img
+                    className="screenshot"
+                    src={`/api/executions/${execution.id}/artifacts/${log.screenshot}`}
+                    alt={`步骤 ${log.index} ${log.status === "failed" ? "失败现场" : "页面"}截图`}
+                    loading="lazy"
+                  />
+                  <figcaption className="muted screenshot-caption">
+                    步骤 {log.index} · {log.action}
+                    {log.status === "failed" ? " · 失败现场" : ""}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
           ) : (
             <div className="empty">暂无截图</div>
           )}
