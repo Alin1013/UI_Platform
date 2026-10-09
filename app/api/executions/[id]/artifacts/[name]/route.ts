@@ -5,12 +5,16 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { artifactDir } from "@/lib/executor";
 
+const executionIdPattern =
+  /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string; name: string }> },
 ) {
   const { id, name } = await context.params;
-  if (!id || !name || !/^[\w-]+\.png$/.test(name)) {
+  // 执行 ID 同样固定为 UUID，配合文件名白名单把读取范围锁在单个报告目录内。
+  if (!id || !executionIdPattern.test(id) || !name || !/^[\w-]+\.png$/.test(name)) {
     return NextResponse.json({ error: "产物名称无效" }, { status: 400 });
   }
 

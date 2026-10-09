@@ -45,9 +45,13 @@ async function readState(): Promise<PlatformState> {
       }
     }
     return parsed;
-  } catch {
+  } catch (error) {
     recoveryDone = true;
-    return emptyState();
+    // 只有“文件不存在”代表空平台；JSON 损坏或读取失败必须抛出，防止后续修改把历史状态覆盖为空库。
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return emptyState();
+    }
+    throw error;
   }
 }
 
