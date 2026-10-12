@@ -21,6 +21,37 @@ import { AiTaskForm } from "@/components/AiTaskForm";
 import { WorkflowManager } from "@/components/WorkflowManager";
 import { StatusBadge } from "@/components/StatusBadge";
 
+/** 计算每个单用例的最新执行；排除流程父记录，避免组合结果覆盖用例自身状态。 */
+function latestByTask(executions: TaskExecution[]) {
+  return latestExecutions(executions, (execution) =>
+    execution.kind === "workflow" ? undefined : execution.taskId,
+  );
+}
+
+/** 计算每个流程组合的最新父执行；只看父记录，防止已完成的子用例干扰列表状态。 */
+function latestByWorkflow(executions: TaskExecution[]) {
+  return latestExecutions(
+    executions,
+    (execution) =>
+      execution.kind === "workflow" ? execution.workflowId ?? undefined : undefined,
+  );
+}
+
+/** 执行历史按管理界面规模读取，一次遍历比多次数据库聚合查询更简单可靠。 */
+function latestExecutions(
+  executions: TaskExecution[],
+  getGroupId: (execution: TaskExecution) => string | undefined,
+) {
+  return executions.reduce<Record<string, TaskExecution>>((groups, execution) => {
+    const groupId = getGroupId(execution);
+    if (!groupId) return groups;
+    const current = groups[groupId];
+    // queuedAt 是调度顺序的既有事实来源；ISO 字符串可直接比较。
+    if (!current || execution.queuedAt > current.queuedAt) groups[groupId] = execution;
+    return groups;
+}, {});
+}
+
 export default function TasksPage() {
   const router = useRouter();
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
@@ -132,7 +163,7 @@ export default function TasksPage() {
             task={editing}
             onSaved={async () => {
               setEditing(undefined);
-      setMessage("用例已保存");
+              setMessage("用例已保存");
               await refresh();
             }}
             onCancel={() => setEditing(undefined)}
@@ -244,35 +275,4 @@ export default function TasksPage() {
       </section>
     </>
   );
-}
-
-/** 计算每个单用例的最新执行；排除流程父记录，避免组合结果覆盖用例自身状态。 */
-function latestByTask(executions: TaskExecution[]) {
-  return latestExecutions(executions, (execution) =>
-    execution.kind === "workflow" ? undefined : execution.taskId,
-  );
-}
-
-/** 计算每个流程组合的最新父执行；只看父记录，防止已完成的子用例干扰列表状态。 */
-function latestByWorkflow(executions: TaskExecution[]) {
-  return latestExecutions(
-    executions,
-    (execution) =>
-      execution.kind === "workflow" ? execution.workflowId ?? undefined : undefined,
-  );
-}
-
-/** 执行历史按管理界面规模读取，一次遍历比多次数据库聚合查询更简单可靠。 */
-function latestExecutions(
-  executions: TaskExecution[],
-  getGroupId: (execution: TaskExecution) => string | undefined,
-) {
-  return executions.reduce<Record<string, TaskExecution>>((groups, execution) => {
-    const groupId = getGroupId(execution);
-    if (!groupId) return groups;
-    const current = groups[groupId];
-    // queuedAt 是调度顺序的既有事实来源；ISO 字符串可直接比较。
-    if (!current || execution.queuedAt > current.queuedAt) groups[groupId] = execution;
-    return groups;
-  }, {});
 }
