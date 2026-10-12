@@ -29,13 +29,17 @@ export function ExecutionDetails({
   executionId,
   tasks,
   onTaskUpdated,
+  onSelectExecution,
 }: {
   executionId: string;
   tasks: AutomationTask[];
   /** 任务定义被修复写回后通知父页面，避免任务名和后续编辑使用旧数据。 */
   onTaskUpdated?: (task: AutomationTask) => void;
+  /** 流程报告允许点击子用例跳到其步骤详情，避免用户手动在左侧列表查找。 */
+  onSelectExecution?: (executionId: string) => void;
 }) {
   const [execution, setExecution] = useState<TaskExecution | null>(null);
+  const [workflowChildren, setWorkflowChildren] = useState<TaskExecution[]>([]);
   const [error, setError] = useState("");
   const [healingError, setHealingError] = useState("");
   const [healingBusy, setHealingBusy] = useState(false);
@@ -44,6 +48,7 @@ export function ExecutionDetails({
   const refreshExecution = useCallback(async () => {
     const payload = await loadExecution(executionId);
     setExecution(payload.execution);
+    setWorkflowChildren(payload.children ?? []);
   }, [executionId]);
 
   useEffect(() => {
@@ -56,6 +61,7 @@ export function ExecutionDetails({
         const payload = await loadExecution(executionId);
         if (!alive) return;
         setExecution(payload.execution);
+        setWorkflowChildren(payload.children ?? []);
         // 只有活动状态才轮询，避免报告页产生无意义请求。
         if (payload.execution.status === "queued" || payload.execution.status === "running") {
           setTimeout(load, 1500);
@@ -134,6 +140,94 @@ export function ExecutionDetails({
     } finally {
       setApplyingId("");
     }
+  }
+
+  // 流程父执行没有浏览器步骤日志；这里用子执行结果渲染组合视角，单用例继续走原详情。
+  if (execution.kind === "workflow") {
+    const children = [...workflowChildren].sort(
+      (left, right) => (left.workflowOrder ?? 0) - (right.workflowOrder ?? 0),
+    );
+    const progress = execution.status === "succeeded"
+      ? 100
+      : execution.totalSteps
+        ? Math.round(((execution.currentStep ?? 0) / execution.totalSteps) * 100)
+        : 0;
+
+    return (
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <div className="panel-title">{execution.workflowName ?? "流程组合"}</div>
+            <span className="muted">组合流程 · {execution.totalSteps} 个用例</span>
+          </div>
+          <StatusBadge status={execution.status} />
+        </div>
+        <div className="panel-body">
+          <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+            <div className="metric">
+              <span className="metric-label">流程进度</span>
+              <div className="metric-value">
+                {execution.currentStep ?? 0}/{execution.totalSteps}
+              </div>
+            </div>
+            <div className="metric">
+              <span className="metric-label">耗时</span>
+              <div className="metric-value">{formatDuration(execution.durationMs)}</div>
+            </div>
+            <div className="metric">
+              <span className="metric-label">开始时间</span>
+              <div className="metric-value">{formatTime(execution.startedAt)}</div>
+            </div>
+            <div className="metric">
+              <span className="metric-label">完成时间</span>
+              <div className="metric-value">{formatTime(execution.finishedAt)}</div>
+            </div>
+          </div>
+          <div className="progress">
+            <div className="progress-bar" style={{ width: `${progress}%` }} />
+          </div>
+          {execution.error ? <p className="error-text">{execution.error}</p> : null}
+
+          <h3 style={{ marginBottom: 8 }}>用例结果</h3>
+          {children.length ? (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>顺序</th>
+                  <th>用例</th>
+                  <th>状态</th>
+                  <th>耗时</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {children.map((child) => {
+                  const task = tasks.find((item) => item.id === child.taskId);
+                  return (
+                    <tr key={child.id}>
+                      <td>{(child.workflowOrder ?? 0) + 1}</td>
+                      <td>{task?.name ?? child.workflowName ?? "未知用例"}</td>
+                      <td><StatusBadge status={child.status} /></td>
+                      <td>{formatDuration(child.durationMs)}</td>
+                      <td>
+                        <button
+                          className="button small"
+                          onClick={() => onSelectExecution?.(child.id)}
+                        >
+                          步骤详情
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty">等待第一个用例派发</div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -34,10 +34,26 @@ export const tasks = sqliteTable("tasks", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/** 用例组合表；只保存引用顺序，不复制任务步骤，保证单一事实来源。 */
+export const workflows = sqliteTable("workflows", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  taskIds: text("task_ids", { mode: "json" }).notNull().default([]),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 /** 执行记录表；logs / healing 同样以 JSON 列存储，保留完整历史。 */
 export const executions = sqliteTable("executions", {
   id: text("id").primaryKey(),
   taskId: text("task_id").notNull(),
+  kind: text("kind"),
+  workflowId: text("workflow_id"),
+  workflowName: text("workflow_name"),
+  workflowTaskIds: text("workflow_task_ids", { mode: "json" }),
+  workflowExecutionId: text("workflow_execution_id"),
+  workflowOrder: integer("workflow_order"),
   runner: text("runner"),
   browser: text("browser"),
   status: text("status").notNull(),

@@ -5,6 +5,7 @@ import type {
   HealingCandidate,
   TaskExecution,
   TestEnvironment,
+  TestWorkflow,
 } from "./types";
 import type { TaskDraft } from "./validation";
 
@@ -130,7 +131,41 @@ export function loadExecutions() {
 }
 
 export function loadExecution(id: string) {
-  return requestJson<{ execution: TaskExecution }>(`/api/executions/${id}`);
+  return requestJson<{
+    execution: TaskExecution;
+    children?: TaskExecution[];
+  }>(`/api/executions/${id}`);
+}
+
+export function loadWorkflows() {
+  return requestJson<{ workflows: TestWorkflow[] }>("/api/workflows");
+}
+
+export function createWorkflow(workflow: unknown) {
+  return requestJson<{ workflow: TestWorkflow }>("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify(workflow),
+  });
+}
+
+export function updateWorkflow(id: string, workflow: unknown) {
+  return requestJson<{ workflow: TestWorkflow }>(`/api/workflows/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(workflow),
+  });
+}
+
+export function removeWorkflow(id: string) {
+  return requestJson<{ ok: boolean }>(`/api/workflows/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function runWorkflow(id: string) {
+  return requestJson<{ execution: TaskExecution }>(
+    `/api/workflows/${id}/run`,
+    { method: "POST" },
+  );
 }
 
 export function formatDuration(ms?: number): string {

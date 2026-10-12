@@ -5,22 +5,29 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Play, Plus, Trash2 } from "lucide-react";
-import type { AutomationTask } from "@/lib/types";
-import { loadTasks, removeTask, runTask } from "@/lib/client";
+import type { AutomationTask, TestWorkflow } from "@/lib/types";
+import { loadTasks, loadWorkflows, removeTask, runTask } from "@/lib/client";
 import { TaskEditor } from "@/components/TaskEditor";
 import { ScriptTaskForm } from "@/components/ScriptTaskForm";
 import { AiTaskForm } from "@/components/AiTaskForm";
+import { WorkflowManager } from "@/components/WorkflowManager";
 
 export default function TasksPage() {
   const router = useRouter();
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
+  const [workflows, setWorkflows] = useState<TestWorkflow[]>([]);
   const [editing, setEditing] = useState<AutomationTask | null | undefined>(undefined);
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState("");
 
   const refresh = useCallback(async () => {
-    const payload = await loadTasks();
-    setTasks(payload.tasks);
+    // 单用例和组合一起刷新；删除任务后组合页也能立刻暴露缺失引用。
+    const [taskPayload, workflowPayload] = await Promise.all([
+      loadTasks(),
+      loadWorkflows(),
+    ]);
+    setTasks(taskPayload.tasks);
+    setWorkflows(workflowPayload.workflows);
   }, []);
 
   useEffect(() => {
@@ -95,6 +102,12 @@ export default function TasksPage() {
         <ScriptTaskForm />
         <AiTaskForm onSaved={refresh} />
       </div>
+
+      <WorkflowManager
+        tasks={tasks}
+        workflows={workflows}
+        onSaved={refresh}
+      />
 
       <p className="error-text">{message}</p>
       <section className="panel">

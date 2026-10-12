@@ -3,11 +3,13 @@
  * 单机部署时全局运行集合能精确限制并发；如果改为多进程，应替换为 BullMQ/Redis。
  */
 
-import type { TaskExecution, TestEnvironment } from "./types";
+import type { ExecutionStatus, TaskExecution, TestEnvironment } from "./types";
 import type { RunnerArtifacts } from "./executor";
 import {
   getEnvironment,
+  getExecution,
   getTask,
+  getWorkflow,
   listExecutions,
   saveExecution,
   updateExecution,
@@ -193,7 +195,11 @@ async function drainQueue(): Promise<void> {
   try {
     for (;;) {
       const pending = (await listExecutions())
-        .filter((execution) => execution.status === "queued")
+        // 流程父执行由专用编排器控制；普通调度器只领取真正的单用例子执行。
+        .filter(
+          (execution) =>
+            execution.status === "queued" && execution.kind !== "workflow",
+        )
         .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
       const available = queue.concurrency - queue.running.size;
       if (!pending.length || available <= 0) return;
@@ -217,6 +223,10 @@ async function drainQueue(): Promise<void> {
 
 export async function enqueueExecution(
   taskId: string,
+  workflow?: Pick<
+    TaskExecution,
+    "workflowId" | "workflowName" | "workflowExecutionId" | "workflowOrder"
+  >,
 ): Promise<TaskExecution> {
   const task = await getTask(taskId);
   if (!task) throw new Error("任务不存在");
@@ -224,16 +234,186 @@ export async function enqueueExecution(
   const execution: TaskExecution = {
     id: crypto.randomUUID(),
     taskId,
+    kind: "task",
     runner: task.runner ?? "playwright",
     browser: task.runtime?.browser ?? "chromium",
     status: "queued",
     queuedAt: new Date().toISOString(),
     totalSteps: task.steps.length,
     logs: [],
+    ...workflow,
   };
   await saveExecution(execution);
   void drainQueue();
   return execution;
+}
+
+/** 组合父执行不进普通并发队列；这里的 Promise 就是该流程的串行编排器。 */
+async function runWorkflow(parentExecutionId: string): Promise<void> {
+  const started = await updateExecution(parentExecutionId, (execution) => {
+    if (execution.status !== "queued") return execution;
+    return {
+      ...execution,
+      status: "running",
+      startedAt: new Date().toISOString(),
+    };
+  });
+  if (!started || started.status !== "running") return;
+
+  // 每个用例开始前都读取父执行，保证取消信号能在步骤间隙生效。
+  for (const [order, taskId] of started.workflowTaskIds?.entries() ?? []) {
+    const parent = await getExecution(parentExecutionId);
+    if (!parent || parent.status !== "running") return;
+
+    const task = await getTask(taskId);
+    if (!task) {
+      await finalizeWorkflow(
+        parentExecutionId,
+        "failed",
+        `第 ${order + 1} 个用例不存在或已被删除`,
+      );
+      return;
+    }
+
+    const child = await enqueueExecution(task.id, {
+      workflowId: parent.workflowId,
+      workflowName: parent.workflowName,
+      workflowExecutionId: parent.id,
+      workflowOrder: order,
+    });
+    await updateExecution(parentExecutionId, (execution) => ({
+      ...execution,
+      // 用例内部步骤由子执行展示；父进度表示已派发到第几个用例。
+      currentStep: order + 1,
+    }));
+    const result = await waitForExecution(child.id);
+
+    if (result.status === "succeeded") continue;
+    await finalizeWorkflow(
+      parentExecutionId,
+      result.status === "interrupted" ? "interrupted" : "failed",
+      result.error
+        ? `第 ${order + 1} 个用例失败：${result.error}`
+        : `第 ${order + 1} 个用例未通过`,
+    );
+    return;
+  }
+
+  await finalizeWorkflow(parentExecutionId, "succeeded");
+}
+
+/** 收口父执行；子用例保留自己的错误详情，父层只补充流程级失败原因。 */
+async function finalizeWorkflow(
+  executionId: string,
+  status: Extract<ExecutionStatus, "succeeded" | "failed" | "interrupted">,
+  error?: string,
+): Promise<void> {
+  await updateExecution(executionId, (execution) => ({
+    ...execution,
+    status,
+    finishedAt: new Date().toISOString(),
+    durationMs: execution.startedAt
+      ? Date.now() - new Date(execution.startedAt).getTime()
+      : undefined,
+    error,
+  }));
+}
+
+/**
+ * 子执行由普通调度器接管后，编排器通过状态轮询等待完成。
+ * 单机控制面的轮询频率与执行详情页一致，实现比回调注册表更抗模块热更新。
+ */
+async function waitForExecution(executionId: string): Promise<TaskExecution> {
+  for (;;) {
+    const execution = await getExecution(executionId);
+    if (!execution) {
+      return { ...placeholderExecution(executionId), status: "failed", error: "执行记录丢失" };
+    }
+    if (execution.status !== "queued" && execution.status !== "running") {
+      return execution;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+/** 轮询期间执行记录意外丢失时，给流程编排器一个可处理的失败结果。 */
+function placeholderExecution(executionId: string): TaskExecution {
+  return {
+    id: executionId,
+    taskId: "",
+    kind: "task",
+    status: "failed",
+    queuedAt: new Date().toISOString(),
+    totalSteps: 0,
+    logs: [],
+  };
+}
+
+export async function enqueueWorkflowExecution(
+  workflowId: string,
+): Promise<TaskExecution> {
+  const workflow = await getWorkflow(workflowId);
+  if (!workflow) throw new Error("流程组合不存在");
+
+  const executions = await listExecutions();
+  if (
+    executions.some(
+      (execution) =>
+        execution.kind === "workflow" &&
+        execution.workflowId === workflowId &&
+        (execution.status === "queued" || execution.status === "running"),
+    )
+  ) {
+    throw new Error("该流程组合正在执行中");
+  }
+
+  const taskIds = workflow.taskIds;
+  // 逐个检查用例存在性；数量上限 20，不会形成有意义的调度开销。
+  const taskPresence = await Promise.all(
+    taskIds.map(async (taskId) => Boolean(await getTask(taskId))),
+  );
+  if (taskPresence.some((exists) => !exists)) {
+    throw new Error("组合中存在已删除的用例，请编辑后重新运行");
+  }
+
+  const execution: TaskExecution = {
+    id: crypto.randomUUID(),
+    taskId: "",
+    kind: "workflow",
+    workflowId,
+    workflowName: workflow.name,
+    workflowTaskIds: taskIds,
+    status: "queued",
+    queuedAt: new Date().toISOString(),
+    totalSteps: taskIds.length,
+    logs: [],
+  };
+  await saveExecution(execution);
+  void runWorkflow(execution.id);
+  return execution;
+}
+
+/** 取消父执行同时取消当前子执行；排队中的后续用例会在编排器检查后跳过。 */
+export async function cancelWorkflowExecution(
+  workflowExecutionId: string,
+): Promise<void> {
+  const executions = await listExecutions();
+  const parent = executions.find(
+    (execution) =>
+      execution.id === workflowExecutionId &&
+      execution.kind === "workflow" &&
+      (execution.status === "queued" || execution.status === "running"),
+  );
+  if (!parent) return;
+
+  executions
+    .filter(
+      (execution) =>
+        execution.workflowExecutionId === workflowExecutionId &&
+        (execution.status === "queued" || execution.status === "running"),
+    )
+    .forEach((execution) => requestExecutionCancel(execution.id));
+  await finalizeWorkflow(workflowExecutionId, "interrupted", "流程已被取消");
 }
 
 /**

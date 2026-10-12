@@ -8,6 +8,7 @@ import type {
   MidsceneCacheStrategy,
   MidsceneScrollDirection,
   RunnerId,
+  TestWorkflow,
 } from "./types";
 
 const actions = new Set([
@@ -190,6 +191,58 @@ export interface TaskDraft {
   aiContexts?: MidsceneAiContexts;
   headless: boolean;
   steps: AutomationStep[];
+}
+
+export interface WorkflowDraft {
+  name: string;
+  description?: string;
+  taskIds: string[];
+}
+
+/**
+ * 组合只校验结构，任务存在性在运行前再次检查；
+ * 这样组合可以先于后续才创建的用例编辑，不会因为保存时的快照检查误拦截。
+ */
+export function parseWorkflowDraft(input: unknown): WorkflowDraft {
+  if (!input || typeof input !== "object") {
+    throw new Error("组合请求体必须是 JSON 对象");
+  }
+  const raw = input as Record<string, unknown>;
+  const name = String(raw.name ?? "").trim();
+  if (!name) throw new Error("组合名称不能为空");
+
+  if (!Array.isArray(raw.taskIds) || raw.taskIds.length === 0) {
+    throw new Error("组合至少需要选择一个用例");
+  }
+  const taskIds = raw.taskIds.map((item) => String(item).trim());
+  if (taskIds.some((taskId) => !taskId)) {
+    throw new Error("组合中的用例 ID 不能为空");
+  }
+  if (new Set(taskIds).size !== taskIds.length) {
+    throw new Error("同一个用例在一次组合里只能出现一次");
+  }
+  if (taskIds.length > 20) {
+    throw new Error("单个组合最多包含 20 个用例");
+  }
+
+  return {
+    name,
+    description: optionalText(raw.description),
+    taskIds,
+  };
+}
+
+export function workflowFromDraft(
+  draft: WorkflowDraft,
+  existing?: TestWorkflow,
+): TestWorkflow {
+  const now = new Date().toISOString();
+  return {
+    ...draft,
+    id: existing?.id ?? crypto.randomUUID(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
 }
 
 export function parseTaskDraft(input: unknown): TaskDraft {

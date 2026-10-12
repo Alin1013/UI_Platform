@@ -13,6 +13,8 @@ npm run start
 
 打开 `http://localhost:3000` 后，平台会自动创建一个内置登录示例。进入“任务管理”点击“运行”，即可验证任务提交、并发调度、步骤日志和截图产物。
 
+任务管理页支持把多个已保存单用例组成流程：组合按界面展示顺序串行执行，任一用例失败即停止；父报告会汇总每个子用例状态，子报告仍保留完整步骤日志。
+
 “自然语言测试用例”面板支持常见中文指令：打开 URL、输入、点击、按键、等待和断言文本。系统会先解析为可编辑的 Playwright 步骤，再保存用例并立即执行。
 
 “AI 用例生成”面板面向开放业务需求。输入需求、目标 URL 和执行引擎后先生成步骤预览；点击保存才创建任务，平台不会自动执行生成结果。
@@ -41,9 +43,11 @@ UI / API
 ```
 
 - 任务 CRUD：`/api/tasks`
+- 流程组合 CRUD：`/api/workflows`、`/api/workflows/:id`
 - 自然语言生成并执行：`POST /api/tasks/from-script`
 - AI 用例草稿：`POST /api/tasks/generate`（默认只预览）
 - 任务执行：`POST /api/tasks/:id/run`
+- 组合执行：`POST /api/workflows/:id/run`
 - 执行查询：`/api/executions`、`/api/executions/:id`
 - 失败修复建议：`POST /api/executions/:id/heal`
 - 应用修复建议：`POST /api/tasks/:id/apply-healing`

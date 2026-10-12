@@ -73,7 +73,11 @@ function ExecutionsView() {
                   }}
                   onClick={() => setSelectedId(execution.id)}
                 >
-                  <span>{tasks.find((task) => task.id === execution.taskId)?.name ?? "未知任务"}</span>
+                  <span>
+                    {execution.kind === "workflow"
+                      ? execution.workflowName ?? "流程组合"
+                      : tasks.find((task) => task.id === execution.taskId)?.name ?? "未知任务"}
+                  </span>
                   <StatusBadge status={execution.status} />
                 </button>
               ))}
@@ -89,6 +93,7 @@ function ExecutionsView() {
               executionId={selectedId}
               tasks={tasks}
               onTaskUpdated={handleTaskUpdated}
+              onSelectExecution={setSelectedId}
             />
           ) : (
             <section className="panel">

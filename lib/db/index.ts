@@ -47,6 +47,15 @@ sqlite.exec(`
     updated_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS workflows (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    task_ids TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS executions (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
@@ -78,6 +87,24 @@ const taskColumns = sqlite
   .all() as Array<{ name: string }>;
 if (!taskColumns.some((column) => column.name === "ai_contexts")) {
   sqlite.exec("ALTER TABLE tasks ADD COLUMN ai_contexts TEXT");
+}
+
+// 组合执行是新增能力；旧安装必须补列，否则历史库无法保存父/子执行关联。
+const executionColumns = sqlite
+  .prepare("PRAGMA table_info(executions)")
+  .all() as Array<{ name: string }>;
+const executionMigrations: Array<[string, string]> = [
+  ["kind", "TEXT"],
+  ["workflow_id", "TEXT"],
+  ["workflow_name", "TEXT"],
+  ["workflow_task_ids", "TEXT"],
+  ["workflow_execution_id", "TEXT"],
+  ["workflow_order", "INTEGER"],
+];
+for (const [column, type] of executionMigrations) {
+  if (!executionColumns.some((item) => item.name === column)) {
+    sqlite.exec(`ALTER TABLE executions ADD COLUMN ${column} ${type}`);
+  }
 }
 
 export const db = drizzle(sqlite, { schema });

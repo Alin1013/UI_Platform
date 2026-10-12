@@ -110,6 +110,19 @@ export interface AutomationTask {
   updatedAt: string;
 }
 
+/**
+ * 用例组合定义；taskIds 顺序就是流程执行顺序。
+ * 组合不复制用例步骤，运行时始终引用最新单用例，避免同一流程出现两份定义。
+ */
+export interface TestWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  taskIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 测试环境定义；执行时 baseUrl 替换全局配置，凭证用于 {username}/{password} 占位符。 */
 export interface TestEnvironment {
   id: string;
@@ -132,6 +145,9 @@ export type ExecutionStatus =
   | "failed"
   | "interrupted";
 
+/** 单用例执行是既有模型；workflow 是组合流程的父执行。 */
+export type ExecutionKind = "task" | "workflow";
+
 export interface StepLog {
   index: number;
   action: string;
@@ -153,7 +169,19 @@ export interface StepLog {
 
 export interface TaskExecution {
   id: string;
+  /** 组合父执行不直接属于某个任务，兼容旧数据库时以空字符串落库。 */
   taskId: string;
+  /** 历史数据没有该字段时按单用例执行解释。 */
+  kind?: ExecutionKind;
+  /** 流程执行引用的组合 ID 与当时的组合名称，删除组合后报告仍可读。 */
+  workflowId?: string;
+  workflowName?: string;
+  /** 父执行保存本次运行开始时的用例顺序快照。 */
+  workflowTaskIds?: string[];
+  /** 子执行回链父执行，便于报告页聚合展示。 */
+  workflowExecutionId?: string;
+  /** 子执行在组合中的 0 基顺序；用于前端展示，不作为调度依据。 */
+  workflowOrder?: number;
   runner?: RunnerId;
   browser?: BrowserId;
   status: ExecutionStatus;
