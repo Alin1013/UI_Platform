@@ -7,13 +7,10 @@ import type { AutomationTask, TaskExecution } from "@/lib/types";
 import { loadExecutions, loadTasks } from "@/lib/client";
 import { ExecutionDetails } from "@/components/ExecutionDetails";
 import { StatusBadge } from "@/components/StatusBadge";
-
-type ReportStatusFilter = "all" | "succeeded" | "failed";
-
-/** 只接受下拉框声明过的选项，避免后续状态扩展时把任意字符串灌进筛选状态。 */
-function parseStatusFilter(value: string): ReportStatusFilter {
-  return value === "succeeded" || value === "failed" ? value : "all";
-}
+import {
+  StatusFilterSelect,
+  type ReportStatusFilter,
+} from "@/components/StatusFilterSelect";
 
 export default function ReportsPage() {
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
@@ -68,16 +65,11 @@ export default function ReportsPage() {
       </div>
 
       <div className="toolbar">
-        <select
-          className="button"
+        <StatusFilterSelect
+          label="按状态筛选报告"
           value={statusFilter}
-          onChange={(event) => setStatusFilter(parseStatusFilter(event.target.value))}
-          aria-label="按状态筛选报告"
-        >
-          <option value="all">全部状态</option>
-          <option value="succeeded">已通过</option>
-          <option value="failed">失败</option>
-        </select>
+          onChange={setStatusFilter}
+        />
       </div>
 
       <p className="error-text">{error}</p>
@@ -111,11 +103,12 @@ export default function ReportsPage() {
                   </td>
                   <td>
                     <button
-                      className="button small"
+                      className={execution.id === selectedId ? "button small current" : "button small"}
                       onClick={() => setSelectedId(execution.id)}
                       disabled={execution.id === selectedId}
+                      aria-current={execution.id === selectedId ? "true" : undefined}
                     >
-                      查看报告
+                      {execution.id === selectedId ? "当前报告" : "查看报告"}
                     </button>
                   </td>
                 </tr>

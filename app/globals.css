@@ -185,6 +185,7 @@ main {
   justify-content: flex-end;
   gap: 10px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 
 .button {
@@ -216,6 +217,123 @@ main {
 
 .button.danger {
   color: var(--danger);
+}
+
+/* 筛选触发器右侧预留箭头空间，避免中文标签被压成省略号。 */
+.select-field {
+  position: relative;
+  display: inline-flex;
+  width: min(220px, 100%);
+}
+
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 36px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  appearance: none;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.select-trigger:hover {
+  background: var(--surface-muted);
+}
+
+.select-trigger:focus-visible,
+.select-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.select-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.select-chevron {
+  color: var(--muted);
+  transition: transform 180ms ease;
+}
+
+.select-chevron-open {
+  transform: rotate(180deg);
+}
+
+/*
+ * 自定义展开层跟随管理面板语言；固定层级避免被后续表格行或详情面板遮住。
+ * 菜单脱离文档流，因此展开和收起不会挤压报告表。
+ */
+.select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: max(100%, 180px);
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgba(23, 33, 43, 0.12);
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: left;
+}
+
+.select-option:hover,
+.select-option:focus-visible,
+.select-option[aria-selected="true"] {
+  background: var(--surface-muted);
+}
+
+.select-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.select-check {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 18px;
+  color: var(--accent);
+}
+
+/*
+ * 当前报告是“位置状态”，不是等待用户操作的禁用动作；
+ * 不沿用全局禁用透明度，避免当前行按钮变得模糊且看起来像故障态。
+ */
+.button.current {
+  background: var(--surface-muted);
+  color: var(--muted);
+  cursor: default;
+  opacity: 1;
+}
+
+/* 表格内动作文案长度固定，统一最小宽度可减少切换选中行时的列宽跳动。 */
+.table .button.small {
+  min-width: 82px;
 }
 
 .button.small {
