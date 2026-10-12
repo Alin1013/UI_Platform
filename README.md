@@ -77,4 +77,4 @@ MIDSCENE_MODEL_FAMILY=
 
 AI 生成的任务必须先预览再保存，不会自动入队。失败自愈只处理 Playwright `click` / `fill` 定位器失败：候选会重放失败前步骤并验证可见性，用户确认后只替换 target；平台不会自动应用修复或自动重跑。AI 语义步骤、`expectText`、按键和等待步骤暂不自愈。
 
-当前版本使用 JSON 文件保存任务和执行记录，适合验证和小规模使用；多实例部署前需要替换为数据库。桌面端和 flowproof 尚未接入，执行器已拆成 Runner Runtime 和 Runner 适配器，后续可以在不改变任务和报告模型的情况下扩展更多 Runner。
+当前版本使用 SQLite 数据库 `data/platform.db` 保存任务、流程和执行记录。环境地址及账号配置存储在 `environment` 表，字段包括 `id`、`name`、`base_url`、`username`、`password`、`created_at` 和 `updated_at`；旧版 `environments` 表会在启动时自动更名，保留既有数据。当前适合单机和小规模使用，多实例部署前需调整数据库方案。桌面端和 flowproof 尚未接入，执行器已拆成 Runner Runtime 和 Runner 适配器，后续可以在不改变任务和报告模型的情况下扩展更多 Runner。

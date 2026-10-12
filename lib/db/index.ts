@@ -19,9 +19,22 @@ const sqlite = new Database(dbFile);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
+// 在建表前原地更名旧表，保留环境 ID、凭证、时间戳和任务关联；事务锁避免路由并发迁移。
+sqlite.transaction(() => {
+  const legacyTable = sqlite.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'environments'",
+  ).get();
+  const currentTable = sqlite.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'environment'",
+  ).get();
+  if (legacyTable && !currentTable) {
+    sqlite.exec("ALTER TABLE environments RENAME TO environment");
+  }
+}).immediate();
+
 // 模块首次加载时确保表存在；单进程 Next.js 只会执行一次，不引入额外迁移工具依赖。
 sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS environments (
+  CREATE TABLE IF NOT EXISTS environment (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     base_url TEXT NOT NULL,

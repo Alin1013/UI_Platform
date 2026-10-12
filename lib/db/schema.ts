@@ -6,8 +6,8 @@
 
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 
-/** 测试环境表；管理页配置，执行时按任务关联的环境注入 URL 和凭证。 */
-export const environments = sqliteTable("environments", {
+/** environment 保存环境地址和凭证配置；保留集合导出名，兼容现有 CRUD 调用。 */
+export const environments = sqliteTable("environment", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
   baseUrl: text("base_url").notNull(),
