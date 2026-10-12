@@ -8,7 +8,8 @@ import { useRouter } from "next/navigation";
 import { WandSparkles } from "lucide-react";
 import { createTaskFromScript } from "@/lib/client";
 
-const defaultScript = [
+// 示例步骤只作为引导展示；初始值保持为空，避免用户打开表单时误认为脚本已准备好执行。
+const scriptPlaceholder = [
   "打开 /demo/login.html",
   "在 input[name=email] 输入 demo@example.com",
   "在 input[name=password] 输入 demo-password",
@@ -19,7 +20,7 @@ const defaultScript = [
 export function ScriptTaskForm() {
   const router = useRouter();
   const [name, setName] = useState("自然语言登录用例");
-  const [script, setScript] = useState(defaultScript);
+  const [script, setScript] = useState("");
   const [headless, setHeadless] = useState(true);
   const [runner, setRunner] = useState<"playwright" | "midscene">("playwright");
   const [busy, setBusy] = useState(false);
@@ -70,7 +71,7 @@ export function ScriptTaskForm() {
               rows={7}
               value={script}
               onChange={(event) => setScript(event.target.value)}
-              placeholder={"打开 /demo/login.html\n在 input[name=email] 输入 demo@example.com\n点击 button[type=submit]\n断言页面包含 “登录成功”"}
+              placeholder={scriptPlaceholder}
               required
             />
           </div>
