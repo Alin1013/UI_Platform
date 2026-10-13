@@ -14,7 +14,8 @@ import { createTask, generateTaskDraft } from "@/lib/client";
 export function AiTaskForm({ onSaved }: { onSaved: () => Promise<void> | void }) {
   const [name, setName] = useState("");
   const [requirement, setRequirement] = useState("");
-  const [targetUrl, setTargetUrl] = useState("/demo/login.html");
+  // 示例地址仅作占位提示，实际 URL 由用户输入，避免默认提交演示页。
+  const [targetUrl, setTargetUrl] = useState("");
   const [runner, setRunner] = useState<AutomationTask["runner"]>("playwright");
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [busy, setBusy] = useState(false);
@@ -80,6 +81,7 @@ export function AiTaskForm({ onSaved }: { onSaved: () => Promise<void> | void })
             <input
               id="ai-url"
               value={targetUrl}
+              placeholder="/demo/login.html"
               onChange={(event) => setTargetUrl(event.target.value)}
               required
             />

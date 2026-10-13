@@ -69,7 +69,7 @@ export default function EnvironmentsPage() {
         setMessage("环境已更新");
       } else {
         await createEnvironment(draft);
-        setMessage("环境已创建");
+        // 创建成功由右侧刷新后的列表反馈，表单不再额外显示成功提示。
       }
       cancelEdit();
       await refresh();
@@ -151,7 +151,7 @@ export default function EnvironmentsPage() {
             <p className="muted" style={{ margin: "8px 0 0" }}>
               任务步骤 fill 值中写 {"{username}"} 和 {"{password}"}，执行时自动替换为环境凭证。
             </p>
-            <p className="error-text">{message}</p>
+            {message ? <p className="error-text">{message}</p> : null}
             <div className="toolbar" style={{ justifyContent: "flex-start" }}>
               <button className="button primary" disabled={busy}>
                 {editingId ? "保存修改" : "创建环境"}
