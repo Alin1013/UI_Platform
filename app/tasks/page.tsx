@@ -1,355 +1,113 @@
-/** 用例管理页：维护单用例列表、流程组合，并提供最近失败结果的手动重试入口。 */
-
+/** 任务管理一级入口：展示概况和二级页面入口，创建与列表拥有独立空间。 */
 "use client";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowRight, ListChecks, Plus, Workflow } from "lucide-react";
+import { loadTasks, loadWorkflows } from "@/lib/client";
+import styles from "./tasks.module.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Pencil, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
-import type { AutomationTask, TaskExecution, TestWorkflow } from "@/lib/types";
-import {
-  canManuallyRetry,
-  loadExecutions,
-  loadTasks,
-  loadWorkflows,
-  removeTask,
-  retryExecution,
-  runTask,
-} from "@/lib/client";
-import { TaskEditor } from "@/components/TaskEditor";
-import { ScriptTaskForm } from "@/components/ScriptTaskForm";
-import { AiTaskForm } from "@/components/AiTaskForm";
-import { WorkflowManager } from "@/components/WorkflowManager";
-import { StatusBadge } from "@/components/StatusBadge";
+const entries = [
+  {
+    href: "/tasks/list",
+    title: "用例列表",
+    text: "查找和维护用例，查看最近结果，发起运行或重试。",
+    icon: ListChecks,
+    action: "查看用例",
+  },
+  {
+    href: "/tasks/new",
+    title: "新建用例",
+    text: "从结构化步骤、规则脚本或 AI 生成开始创建自动化用例。",
+    icon: Plus,
+    action: "开始创建",
+  },
+  {
+    href: "/tasks/workflows",
+    title: "组合管理",
+    text: "将多个用例按顺序串联，维护组合并统一执行。",
+    icon: Workflow,
+    action: "管理组合",
+  },
+];
 
-/** 计算每个单用例的最新执行；排除流程父记录，避免组合结果覆盖用例自身状态。 */
-function latestByTask(executions: TaskExecution[]) {
-  return latestExecutions(executions, (execution) =>
-    execution.kind === "workflow" ? undefined : execution.taskId,
-  );
-}
-
-/** 计算每个流程组合的最新父执行；只看父记录，防止已完成的子用例干扰列表状态。 */
-function latestByWorkflow(executions: TaskExecution[]) {
-  return latestExecutions(
-    executions,
-    (execution) =>
-      execution.kind === "workflow" ? execution.workflowId ?? undefined : undefined,
-  );
-}
-
-/** 执行历史按管理界面规模读取，一次遍历比多次数据库聚合查询更简单可靠。 */
-function latestExecutions(
-  executions: TaskExecution[],
-  getGroupId: (execution: TaskExecution) => string | undefined,
-) {
-  return executions.reduce<Record<string, TaskExecution>>((groups, execution) => {
-    const groupId = getGroupId(execution);
-    if (!groupId) return groups;
-    const current = groups[groupId];
-    // queuedAt 是调度顺序的既有事实来源；ISO 字符串可直接比较。
-    if (!current || execution.queuedAt > current.queuedAt) groups[groupId] = execution;
-    return groups;
-}, {});
-}
-
+/** 概况只读取定义数量；运行结果与操作留在列表和组合页。 */
 export default function TasksPage() {
-  const router = useRouter();
-  const [tasks, setTasks] = useState<AutomationTask[]>([]);
-  const [workflows, setWorkflows] = useState<TestWorkflow[]>([]);
-  const [executions, setExecutions] = useState<TaskExecution[]>([]);
-  const [editing, setEditing] = useState<AutomationTask | null | undefined>(undefined);
-  const [message, setMessage] = useState("");
-  const [busyId, setBusyId] = useState("");
-  const editorDialogRef = useRef<HTMLElement | null>(null);
-  const editorTriggerRef = useRef<HTMLButtonElement | null>(null);
-
-  // 弹窗打开后把键盘焦点留在编辑器内，并在关闭时回到触发按钮，避免键盘用户迷失位置。
+  const [counts, setCounts] = useState<{
+    tasks: number;
+    workflows: number;
+  } | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
-    if (editing === undefined) return;
-    const dialog = editorDialogRef.current;
-    if (!dialog) return;
-    const dialogElement = dialog;
-    const focusableSelector =
-      "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
-    const focusFirstControl = () => {
-      dialogElement.querySelector<HTMLElement>(focusableSelector)?.focus();
-    };
-    focusFirstControl();
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setEditing(undefined);
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const controls = Array.from(dialogElement.querySelectorAll<HTMLElement>(focusableSelector));
-      if (!controls.length) return;
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    dialogElement.addEventListener("keydown", handleKeyDown);
+    let active = true;
+    Promise.all([loadTasks(), loadWorkflows()])
+      .then(([tasks, workflows]) => {
+        if (active)
+          setCounts({
+            tasks: tasks.tasks.length,
+            workflows: workflows.workflows.length,
+          });
+      })
+      .catch((caught: unknown) => {
+        if (active)
+          setError(caught instanceof Error ? caught.message : "概况加载失败");
+      });
     return () => {
-      dialogElement.removeEventListener("keydown", handleKeyDown);
-      editorTriggerRef.current?.focus();
+      active = false;
     };
-  }, [editing]);
-
-  function openEditor(task: AutomationTask | null, trigger: HTMLButtonElement) {
-    editorTriggerRef.current = trigger;
-    setEditing(task);
-  }
-
-  const refresh = useCallback(async () => {
-    // 单用例、组合和执行历史一起刷新；列表需要历史结果来决定重试入口。
-    const [taskPayload, workflowPayload, executionPayload] = await Promise.all([
-      loadTasks(),
-      loadWorkflows(),
-      loadExecutions(),
-    ]);
-    setTasks(taskPayload.tasks);
-    setWorkflows(workflowPayload.workflows);
-    setExecutions(executionPayload.executions);
   }, []);
-
-  // 用例列表忽略 workflow 父记录；组合列表只看父记录，避免子用例结果污染流程状态。
-  const latestTaskExecutions = useMemo(() => latestByTask(executions), [executions]);
-  const latestWorkflowExecutions = useMemo(
-    () => latestByWorkflow(executions),
-    [executions],
-  );
-
-  useEffect(() => {
-    refresh().catch((error: unknown) =>
-      setMessage(error instanceof Error ? error.message : "加载任务失败"),
-    );
-  }, [refresh]);
-
-  async function handleRun(task: AutomationTask) {
-    setBusyId(task.id);
-    setMessage("");
-    try {
-      const payload = await runTask(task.id);
-      router.push(`/executions?focus=${payload.execution.id}`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "任务提交失败");
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  /** 以该用例最近失败执行为基准重试；服务端返回新执行后跳转监控页。 */
-  async function handleRetryTask(task: AutomationTask) {
-    const latest = latestTaskExecutions[task.id];
-    // 没有历史执行时按钮不会出现；这里再防御一次状态刷新间隙的点击。
-    if (!latest) return;
-    setBusyId(task.id);
-    setMessage("");
-    try {
-      const payload = await retryExecution(latest.id);
-      router.push(`/executions?focus=${payload.execution.id}`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "用例重试失败");
-      setBusyId("");
-    }
-  }
-
-  /** 组合重试始终重建父执行，历史父/子报告保持原样。 */
-  async function handleRetryWorkflow(workflow: TestWorkflow) {
-    const latest = latestWorkflowExecutions[workflow.id];
-    if (!latest) throw new Error("流程组合还没有可重试的执行");
-    const payload = await retryExecution(latest.id);
-    router.push(`/executions?focus=${payload.execution.id}`);
-  }
-
-  async function handleDelete(task: AutomationTask) {
-    if (!window.confirm(`删除用例「${task.name}」？历史执行报告会保留。`)) return;
-    setBusyId(task.id);
-    try {
-      await removeTask(task.id);
-      if (editing?.id === task.id) setEditing(undefined);
-      await refresh();
-      setMessage("用例已删除");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "删除失败");
-    } finally {
-      setBusyId("");
-    }
-  }
-
   return (
     <>
-      <div className="page-heading">
+      <div className={styles.heading}>
         <div>
-          <h1>用例管理</h1>
-          <p>用结构化步骤定义 Web 自动化流程，保持执行可复现。</p>
-          <p className="muted" style={{ margin: 0 }}>
-            规则脚本可直接执行；AI 生成结果需预览确认后保存。
-          </p>
+          <span className={styles.eyebrow}>自动化工作空间</span>
+          <h1>任务管理</h1>
+          <p>从创建到执行，在各自的页面中专注完成每一步。</p>
         </div>
-        <button
-          className="button primary"
-          onClick={(event) => openEditor(null, event.currentTarget)}
-        >
-          <Plus size={16} aria-hidden />
-          新建用例
-        </button>
       </div>
-
-      {editing !== undefined ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setEditing(undefined);
-          }}
-        >
-          <section
-            className="modal-dialog"
-            ref={editorDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="task-editor-title"
-          >
-            <div className="panel-header">
-              <h2 id="task-editor-title" className="panel-title">
-                {editing ? "编辑用例" : "新建用例"}
-              </h2>
-              <button
-                type="button"
-                className="button small"
-                aria-label="关闭编辑弹窗"
-                onClick={() => setEditing(undefined)}
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-            <TaskEditor
-              task={editing}
-              onSaved={async () => {
-                setEditing(undefined);
-                setMessage("用例已保存");
-                await refresh();
-              }}
-              onCancel={() => setEditing(undefined)}
-            />
-          </section>
+      <section className={styles.overview} aria-label="任务概况">
+        <div>
+          <span className={styles.eyebrow}>用例资产</span>
+          <h2>管理你的自动化流程</h2>
+          <p>维护可复现的用例，将独立步骤组合成完整业务流程。</p>
         </div>
-      ) : null}
-
-      {/* 两个创建入口并列展示：规则解析适合固定话术，AI 生成适合开放业务需求。 */}
-      <div className="form-grid" style={{ marginBottom: 16 }}>
-        <ScriptTaskForm />
-        <AiTaskForm onSaved={refresh} />
-      </div>
-
-      <WorkflowManager
-        tasks={tasks}
-        workflows={workflows}
-        latestExecutions={latestWorkflowExecutions}
-        onRetryWorkflow={handleRetryWorkflow}
-        onSaved={refresh}
-      />
-
-      <p className="error-text">{message}</p>
-      <section className="panel">
-        <div className="panel-header">
-          <h2 className="panel-title">用例列表</h2>
-          <span className="muted">{tasks.length} 个用例</span>
+        <div className={styles.counts}>
+          <div>
+            <strong>{counts?.tasks ?? "—"}</strong>
+            <span>个用例</span>
+          </div>
+          <div>
+            <strong>{counts?.workflows ?? "—"}</strong>
+            <span>个组合</span>
+          </div>
         </div>
-        {tasks.length ? (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>目标</th>
-                <th>步骤</th>
-                <th>标签</th>
-                <th>最近状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((task) => (
-                <tr key={task.id}>
-                  <td>
-                    <strong>{task.name}</strong>
-                    {task.description ? <p className="muted" style={{ margin: "4px 0 0" }}>{task.description}</p> : null}
-                  </td>
-                  <td>
-                    Web / {task.runner === "midscene" ? "Midscene" : "Playwright"}
-                    <p className="muted" style={{ margin: "4px 0 0" }}>
-                      {task.runtime?.browser ?? "chromium"}
-                    </p>
-                  </td>
-                  <td>{task.steps.length}</td>
-                  <td>{task.labels.join("、") || "-"}</td>
-                  <td>
-                    {latestTaskExecutions[task.id] ? (
-                      <StatusBadge status={latestTaskExecutions[task.id]!.status} />
-                    ) : (
-                      <span className="muted">未运行</span>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        className="button small primary"
-                        disabled={busyId === task.id}
-                        onClick={() => void handleRun(task)}
-                      >
-                        <Play size={14} aria-hidden />
-                        运行
-                      </button>
-                      {(() => {
-                        const latest = latestTaskExecutions[task.id];
-                        const retryable = canManuallyRetry(latest?.status);
-                        // 列表只给异常结果提供重试；正常重跑仍使用“运行”按钮，语义更清晰。
-                        if (!retryable) return null;
-                        return (
-                          <button
-                            className="button small primary"
-                            disabled={busyId === task.id}
-                            onClick={() => void handleRetryTask(task)}
-                          >
-                            <RotateCcw size={14} aria-hidden />
-                            重试
-                          </button>
-                        );
-                      })()}
-                      <button
-                        className="button small"
-                        onClick={(event) => openEditor(task, event.currentTarget)}
-                      >
-                        <Pencil size={14} aria-hidden />
-                        编辑
-                      </button>
-                      <button
-                        className="button small danger"
-                        disabled={busyId === task.id}
-                        onClick={() => void handleDelete(task)}
-                      >
-                        <Trash2 size={14} aria-hidden />
-                        删除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="empty">暂无用例；点击右上角新建一个 Web 流程。</div>
-        )}
       </section>
+      {error ? (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className={styles.cards}>
+        {entries.map(({ href, title, text, icon: Icon, action }) => (
+          <Link key={href} href={href} className={styles.card}>
+            <span className={styles.cardIcon}>
+              <Icon size={22} aria-hidden />
+            </span>
+            <h2>{title}</h2>
+            <p>{text}</p>
+            <span className={styles.cardAction}>
+              {action}
+              <ArrowRight size={16} aria-hidden />
+            </span>
+          </Link>
+        ))}
+      </div>
+      <div className={styles.note}>
+        <strong>建议的工作顺序</strong>
+        <p>
+          新建用例 → 在用例列表中检查并运行 →
+          按业务流程编排组合。执行进度和结果可在执行监控中查看。
+        </p>
+      </div>
     </>
   );
 }

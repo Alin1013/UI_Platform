@@ -625,6 +625,17 @@ main {
     flex-direction: column;
   }
 
+  /* 小屏导航按完整链接换行，避免横排挤压使中文逐字变成竖排。 */
+  .main-nav {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .main-nav a {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
   main {
     width: min(100% - 28px, 1440px);
     margin-top: 18px;
