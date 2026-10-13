@@ -69,3 +69,35 @@
   height: auto;
   min-height: 0;
 }
+
+/* 操作反馈紧凑展示，避免全局空状态的大块留白掩盖正在生成或请求失败。 */
+.healingFeedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.healingFeedback p {
+  margin: 4px 0 0;
+}
+
+.spinner {
+  flex-shrink: 0;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
