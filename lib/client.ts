@@ -30,6 +30,11 @@ export function loadTasks() {
   return requestJson<{ tasks: AutomationTask[] }>("/api/tasks");
 }
 
+/** 独立编辑页读取当前定义，支持刷新与直接访问，不依赖列表页内存。 */
+export function loadTask(id: string) {
+  return requestJson<{ task: AutomationTask }>(`/api/tasks/${encodeURIComponent(id)}`);
+}
+
 export function createTask(task: unknown) {
   return requestJson<{ task: AutomationTask }>("/api/tasks", {
     method: "POST",
