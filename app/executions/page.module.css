@@ -1,0 +1,33 @@
+/* 执行监控的专属布局：列表不与详情平分空间，窄屏按阅读顺序堆叠。 */
+.layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.layout > *,
+.content {
+  min-width: 0;
+}
+
+.layout .record {
+  min-width: 0;
+  white-space: normal;
+  text-align: left;
+}
+
+.record > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.record > span:last-child {
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

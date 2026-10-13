@@ -8,7 +8,9 @@ import type { AutomationTask, TaskExecution } from "@/lib/types";
 import { loadExecutions, loadTasks } from "@/lib/client";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ExecutionDetails } from "@/components/ExecutionDetails";
+import styles from "./page.module.css";
 
+/** 执行列表占较窄侧栏，给长日志和截图留出可收缩的详情空间。 */
 function ExecutionsView() {
   const searchParams = useSearchParams();
   const initialFocus = searchParams.get("focus");
@@ -55,7 +57,7 @@ function ExecutionsView() {
         </div>
       </div>
 
-      <div className="split">
+      <div className={styles.layout}>
         <section className="panel">
           <div className="panel-header">
             <h2 className="panel-title">执行记录</h2>
@@ -66,7 +68,7 @@ function ExecutionsView() {
               {executions.map((execution) => (
                 <button
                   key={execution.id}
-                  className="button"
+                  className={`button ${styles.record}`}
                   style={{
                     justifyContent: "space-between",
                     background: execution.id === selectedId ? "var(--surface-muted)" : "white",
@@ -87,7 +89,7 @@ function ExecutionsView() {
           )}
         </section>
 
-        <div>
+        <div className={styles.content}>
           {selectedId ? (
             <ExecutionDetails
               executionId={selectedId}
