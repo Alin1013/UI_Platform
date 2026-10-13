@@ -1,0 +1,76 @@
+/* AI 草稿专用布局：隔离执行日志样式，并明确输入、预览、确认三个区域。 */
+.generateActions {
+  display: flex;
+  margin-top: 18px;
+}
+
+.draft {
+  margin-top: 20px;
+}
+
+.draftHeader {
+  flex-direction: row;
+  align-items: center;
+}
+
+.draftTitle {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepCount {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 最后一列允许缩到内容宽度以下，长 URL 和定位器可换行且不会挤出面板。 */
+.step {
+  display: grid;
+  grid-template-columns: 28px 76px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.stepAction,
+.stepDetail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.draftActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--background);
+}
+
+/* 手机端详情独占下一行，确认操作均分宽度，保留完整按钮文字和点击面积。 */
+@media (max-width: 600px) {
+  .step {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 6px 10px;
+  }
+
+  .stepDetail {
+    grid-column: 2;
+  }
+
+  .draftActions > button {
+    flex: 1 1 120px;
+  }
+}
