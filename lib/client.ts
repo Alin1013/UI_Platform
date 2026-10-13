@@ -2,6 +2,7 @@
 
 import type {
   AutomationTask,
+  AutomationRuntime,
   ExecutionStatus,
   HealingCandidate,
   TaskExecution,
@@ -96,6 +97,7 @@ export function generateTaskDraft(input: {
   requirement: string;
   targetUrl: string;
   runner: AutomationTask["runner"];
+  runtime?: AutomationRuntime;
   name?: string;
   save?: boolean;
 }) {
