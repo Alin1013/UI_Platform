@@ -21,12 +21,14 @@ import {
   retryExecution,
 } from "@/lib/client";
 import { StatusBadge } from "./StatusBadge";
+import styles from "./ExecutionDetails.module.css";
 
 /** 修复状态只展示用户可理解的中文；rejected 当前作为数据预留。 */
 function healingStatusLabel(status: HealingStatus) {
   return status === "proposed" ? "待确认" : status === "applied" ? "已应用" : "已忽略";
 }
 
+/** 用容器宽度适配日志和截图，兼容监控侧栏与报告页两种详情宽度。 */
 export function ExecutionDetails({
   executionId,
   tasks,
@@ -172,7 +174,7 @@ export function ExecutionDetails({
         : 0;
 
     return (
-      <div className="panel">
+      <div className={`panel ${styles.details}`}>
         <div className="panel-header">
           <div>
             <div className="panel-title">{execution.workflowName ?? "流程组合"}</div>
@@ -193,7 +195,7 @@ export function ExecutionDetails({
           </div>
         </div>
         <div className="panel-body">
-          <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+          <div className={`metric-grid ${styles.metrics}`}>
             <div className="metric">
               <span className="metric-label">流程进度</span>
               <div className="metric-value">
@@ -278,7 +280,7 @@ export function ExecutionDetails({
   }
 
   return (
-    <>
+    <div className={styles.details}>
       <div className="panel">
         <div className="panel-header">
           <div>
@@ -303,7 +305,7 @@ export function ExecutionDetails({
           </div>
         </div>
         <div className="panel-body">
-          <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+          <div className={`metric-grid ${styles.metrics}`}>
             <div className="metric">
               <span className="metric-label">步骤进度</span>
               <div className="metric-value">
@@ -353,7 +355,7 @@ export function ExecutionDetails({
         </div>
       </div>
 
-      <div className="split" style={{ marginTop: 16 }}>
+      <div className={styles.evidence}>
         <section className="panel">
           <div className="panel-header">
             <h2 className="panel-title">执行日志</h2>
@@ -365,7 +367,7 @@ export function ExecutionDetails({
             {execution.logs.length ? (
               <ul className="log-list">
                 {execution.logs.map((log) => (
-                  <li key={log.index} className={`log-item ${log.status}`}>
+                  <li key={log.index} className={`log-item ${log.status} ${styles.logItem}`}>
                     <strong>{log.index}</strong>
                     <span>
                       {log.action}
@@ -381,7 +383,7 @@ export function ExecutionDetails({
                         ? ""
                         : ` · ${typeof log.aiResult === "string" ? log.aiResult : JSON.stringify(log.aiResult)}`}
                     </span>
-                    <span>{formatDuration(log.durationMs)}</span>
+                    <span className={styles.duration}>{formatDuration(log.durationMs)}</span>
                   </li>
                 ))}
               </ul>
@@ -400,12 +402,20 @@ export function ExecutionDetails({
             <div className="panel-body screenshot-list">
               {screenshots.map((log) => (
                 <figure className="screenshot-item" key={log.index}>
-                  <img
-                    className="screenshot"
-                    src={`/api/executions/${execution.id}/artifacts/${log.screenshot}`}
-                    alt={`步骤 ${log.index} ${log.status === "failed" ? "失败现场" : "页面"}截图`}
-                    loading="lazy"
-                  />
+                  {/* 面板内保留完整比例；需要检查细节时可直接打开原始截图。 */}
+                  <a
+                    href={`/api/executions/${execution.id}/artifacts/${log.screenshot}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`查看步骤 ${log.index} 截图原图`}
+                  >
+                    <img
+                      className={`screenshot ${styles.screenshot}`}
+                      src={`/api/executions/${execution.id}/artifacts/${log.screenshot}`}
+                      alt={`步骤 ${log.index} ${log.status === "failed" ? "失败现场" : "页面"}截图`}
+                      loading="lazy"
+                    />
+                  </a>
                   <figcaption className="muted screenshot-caption">
                     步骤 {log.index} · {log.action}
                     {log.status === "failed" ? " · 失败现场" : ""}
@@ -487,6 +497,6 @@ export function ExecutionDetails({
           </div>
         </section>
       ) : null}
-    </>
+    </div>
   );
 }

@@ -1,0 +1,71 @@
+/* 详情布局按可用容器宽度响应，防止侧栏挤压下的长日志和截图撑破面板。 */
+.details {
+  min-width: 0;
+  container-type: inline-size;
+  overflow-wrap: anywhere;
+}
+
+.details :global(.panel),
+.details :global(.panel-body),
+.details :global(.metric),
+.details :global(.screenshot-item) {
+  min-width: 0;
+}
+
+.details :global(.panel-header),
+.details :global(.panel-header) > div {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.details .metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+}
+
+.evidence {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+/* 足够宽才并排展示证据；用容器查询避免在宽视口中的窄详情栏误用双列。 */
+@container (min-width: 960px) {
+  .evidence {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.details .logItem {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.logItem > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 消息独占第二行并保留调用栈换行，不裁切 URL、定位器或失败原因。 */
+.details .logItem > :global(.log-status) {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.details .logItem > .duration {
+  grid-row: 1;
+  grid-column: 3;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* 移除固定最小高度，窄屏也能按原图比例展示全部画面。 */
+.details .screenshot {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  min-height: 0;
+}
