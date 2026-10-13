@@ -2,6 +2,7 @@
 
 import type {
   AutomationTask,
+  ExecutionStatus,
   HealingCandidate,
   TaskExecution,
   TestEnvironment,
@@ -135,6 +136,19 @@ export function loadExecution(id: string) {
     execution: TaskExecution;
     children?: TaskExecution[];
   }>(`/api/executions/${id}`);
+}
+
+/** 以一次历史执行为基准重新入队；服务端会按其 kind 自动重试单用例或组合。 */
+export function retryExecution(id: string) {
+  return requestJson<{ execution: TaskExecution }>(
+    `/api/executions/${id}/retry`,
+    { method: "POST" },
+  );
+}
+
+/** 手动重试只处理已收口的异常结果；成功重跑继续使用“运行”入口。 */
+export function canManuallyRetry(status?: ExecutionStatus) {
+  return status === "failed" || status === "interrupted";
 }
 
 export function loadWorkflows() {

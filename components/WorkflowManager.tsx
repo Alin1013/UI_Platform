@@ -10,25 +10,34 @@ import {
   Pencil,
   Play,
   Plus,
+  RotateCcw,
   Save,
   Trash2,
   X,
 } from "lucide-react";
-import type { AutomationTask, TestWorkflow } from "@/lib/types";
+import type { AutomationTask, TaskExecution, TestWorkflow } from "@/lib/types";
 import {
+  canManuallyRetry,
   createWorkflow,
   removeWorkflow,
   runWorkflow,
   updateWorkflow,
 } from "@/lib/client";
+import { StatusBadge } from "./StatusBadge";
 
 export function WorkflowManager({
   tasks,
   workflows,
+  latestExecutions,
+  onRetryWorkflow,
   onSaved,
 }: {
   tasks: AutomationTask[];
   workflows: TestWorkflow[];
+  /** 每个组合最近一次父执行；列表用它展示结果并判断是否可重试。 */
+  latestExecutions: Record<string, TaskExecution | undefined>;
+  /** 重试沿用原父执行上下文，由用例页统一跳转到新父执行。 */
+  onRetryWorkflow: (workflow: TestWorkflow) => Promise<void>;
   onSaved: () => Promise<void>;
 }) {
   // undefined 表示关闭编辑；null 表示新建；具体对象表示编辑已保存组合。
@@ -38,6 +47,7 @@ export function WorkflowManager({
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [retryingId, setRetryingId] = useState("");
 
   // 编辑目标切换时同步重建草稿，避免上一次组合的顺序残留到新建表单。
   useEffect(() => {
@@ -98,6 +108,19 @@ export function WorkflowManager({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "流程提交失败");
       setBusyId("");
+    }
+  }
+
+  /** 列表内的手动重试只处理已失败的最近父执行，避免绕过前端状态提示。 */
+  async function retryWorkflow(workflow: TestWorkflow) {
+    setRetryingId(workflow.id);
+    setMessage("");
+    try {
+      await onRetryWorkflow(workflow);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "流程重试失败");
+    } finally {
+      setRetryingId("");
     }
   }
 
@@ -219,6 +242,7 @@ export function WorkflowManager({
               <tr>
                 <th>名称</th>
                 <th>用例顺序</th>
+                <th>最近状态</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -239,6 +263,13 @@ export function WorkflowManager({
                       .join(" → ")}
                   </td>
                   <td>
+                    {latestExecutions[workflow.id] ? (
+                      <StatusBadge status={latestExecutions[workflow.id]!.status} />
+                    ) : (
+                      <span className="muted">未运行</span>
+                    )}
+                  </td>
+                  <td>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         className="button small primary"
@@ -248,6 +279,21 @@ export function WorkflowManager({
                         <Play size={14} aria-hidden />
                         运行
                       </button>
+                      {(() => {
+                        const latest = latestExecutions[workflow.id];
+                        const retryable = canManuallyRetry(latest?.status);
+                        if (!retryable) return null;
+                        return (
+                          <button
+                            className="button small primary"
+                            disabled={busyId === workflow.id || retryingId === workflow.id}
+                            onClick={() => void retryWorkflow(workflow)}
+                          >
+                            <RotateCcw size={14} aria-hidden />
+                            {retryingId === workflow.id ? "重试中" : "重试"}
+                          </button>
+                        );
+                      })()}
                       <button
                         className="button small"
                         disabled={busyId === workflow.id}
@@ -295,7 +341,7 @@ export function WorkflowManager({
             </div>
           ) : (
             <div className="empty" style={{ marginTop: 8 }}>
-              暂无单用例；先创建任务再组合。
+              暂无单用例；先创建用例再组合。
             </div>
           )}
         </div>

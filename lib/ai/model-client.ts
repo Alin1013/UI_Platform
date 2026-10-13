@@ -81,9 +81,7 @@ export async function requestModelJson<T>(
           })),
         ];
 
-  const endpoint = config.baseUrl.endsWith("/chat/completions")
-    ? config.baseUrl
-    : `${config.baseUrl}/chat/completions`;
+  const endpoint = resolveChatEndpoint(config.baseUrl);
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -110,7 +108,11 @@ export async function requestModelJson<T>(
     );
   }
 
-  const payload = (await response.json()) as {
+  const payload = (await response.json().catch(() => {
+    throw new Error(
+      "模型服务返回了非 JSON 响应；请检查 MIDSCENE_MODEL_BASE_URL 是否指向 OpenAI 兼容接口",
+    );
+  })) as {
     choices?: Array<{ message?: { content?: unknown } }>;
   };
   const rawContent = payload.choices?.[0]?.message?.content;
@@ -128,4 +130,19 @@ export async function requestModelJson<T>(
         : "";
   if (!text.trim()) throw new Error("模型返回内容为空");
   return parseJsonResponse<T>(text);
+}
+
+/**
+ * 把模型基础地址归一化为 chat/completions 端点。
+ * 只配置域名时按 OpenAI 兼容约定补 /v1，避免根路径命中网站首页并返回 HTML。
+ */
+function resolveChatEndpoint(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  const path = url.pathname.replace(/\/+$/, "");
+
+  if (!path || path === "/chat/completions") {
+    return `${url.origin}${path || "/v1"}/chat/completions`;
+  }
+
+  return `${url.origin}${path}/chat/completions`;
 }

@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, RefreshCw, Wrench } from "lucide-react";
+import { Check, RefreshCw, RotateCcw, Wrench } from "lucide-react";
 import type {
   AutomationTask,
   HealingStatus,
@@ -13,10 +13,12 @@ import type {
 } from "@/lib/types";
 import {
   applyHealing,
+  canManuallyRetry,
   formatDuration,
   formatTime,
   generateHealing,
   loadExecution,
+  retryExecution,
 } from "@/lib/client";
 import { StatusBadge } from "./StatusBadge";
 
@@ -44,6 +46,8 @@ export function ExecutionDetails({
   const [healingError, setHealingError] = useState("");
   const [healingBusy, setHealingBusy] = useState(false);
   const [applyingId, setApplyingId] = useState("");
+  const [retryingId, setRetryingId] = useState("");
+  const [retryError, setRetryError] = useState("");
 
   const refreshExecution = useCallback(async () => {
     const payload = await loadExecution(executionId);
@@ -142,6 +146,20 @@ export function ExecutionDetails({
     }
   }
 
+  /** 人工重试父流程或任意子用例；成功后立即切换到新执行继续轮询。 */
+  async function handleRetry(sourceExecutionId: string) {
+    setRetryingId(sourceExecutionId);
+    setRetryError("");
+    try {
+      const payload = await retryExecution(sourceExecutionId);
+      onSelectExecution?.(payload.execution.id);
+    } catch (caught) {
+      setRetryError(caught instanceof Error ? caught.message : "执行重试失败");
+    } finally {
+      setRetryingId("");
+    }
+  }
+
   // 流程父执行没有浏览器步骤日志；这里用子执行结果渲染组合视角，单用例继续走原详情。
   if (execution.kind === "workflow") {
     const children = [...workflowChildren].sort(
@@ -160,7 +178,19 @@ export function ExecutionDetails({
             <div className="panel-title">{execution.workflowName ?? "流程组合"}</div>
             <span className="muted">组合流程 · {execution.totalSteps} 个用例</span>
           </div>
-          <StatusBadge status={execution.status} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {canManuallyRetry(execution.status) ? (
+              <button
+                className="button small primary"
+                disabled={retryingId === execution.id}
+                onClick={() => void handleRetry(execution.id)}
+              >
+                <RotateCcw size={14} aria-hidden />
+                {retryingId === execution.id ? "重试中" : "重试流程"}
+              </button>
+            ) : null}
+            <StatusBadge status={execution.status} />
+          </div>
         </div>
         <div className="panel-body">
           <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
@@ -187,6 +217,7 @@ export function ExecutionDetails({
             <div className="progress-bar" style={{ width: `${progress}%` }} />
           </div>
           {execution.error ? <p className="error-text">{execution.error}</p> : null}
+          {retryError ? <p className="error-text">{retryError}</p> : null}
 
           <h3 style={{ marginBottom: 8 }}>用例结果</h3>
           {children.length ? (
@@ -197,7 +228,7 @@ export function ExecutionDetails({
                   <th>用例</th>
                   <th>状态</th>
                   <th>耗时</th>
-                  <th />
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -210,12 +241,28 @@ export function ExecutionDetails({
                       <td><StatusBadge status={child.status} /></td>
                       <td>{formatDuration(child.durationMs)}</td>
                       <td>
-                        <button
-                          className="button small"
-                          onClick={() => onSelectExecution?.(child.id)}
-                        >
-                          步骤详情
-                        </button>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            className="button small"
+                            onClick={() => onSelectExecution?.(child.id)}
+                          >
+                            步骤详情
+                          </button>
+                          {/* 父流程收口后才允许子用例旁路重试，避免和编排器派发同一用例冲突。 */}
+                          {canManuallyRetry(child.status) && canManuallyRetry(execution.status) ? (
+                            <button
+                              className="button small primary"
+                              disabled={
+                                !tasks.some((item) => item.id === child.taskId) ||
+                                retryingId === child.id
+                              }
+                              onClick={() => void handleRetry(child.id)}
+                            >
+                              <RotateCcw size={14} aria-hidden />
+                              {retryingId === child.id ? "重试中" : "重试用例"}
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -240,7 +287,20 @@ export function ExecutionDetails({
               {runnerLabel} · {execution.browser ?? "chromium"} · 尝试 {execution.attempts ?? 1} 次
             </span>
           </div>
-          <StatusBadge status={execution.status} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {canManuallyRetry(execution.status) ? (
+              <button
+                className="button small primary"
+                // 已删除任务的报告仍可查看，但无法安全重建浏览器执行上下文。
+                disabled={!task || retryingId === execution.id}
+                onClick={() => void handleRetry(execution.id)}
+              >
+                <RotateCcw size={14} aria-hidden />
+                {retryingId === execution.id ? "重试中" : "重试用例"}
+              </button>
+            ) : null}
+            <StatusBadge status={execution.status} />
+          </div>
         </div>
         <div className="panel-body">
           <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
@@ -267,6 +327,7 @@ export function ExecutionDetails({
             <div className="progress-bar" style={{ width: `${progress}%` }} />
           </div>
           {execution.error ? <p className="error-text">{execution.error}</p> : null}
+          {retryError ? <p className="error-text">{retryError}</p> : null}
           {execution.reportUrl || execution.tracePath ? (
             <div className="toolbar" style={{ justifyContent: "flex-start", marginTop: 12 }}>
               {execution.reportUrl ? (
