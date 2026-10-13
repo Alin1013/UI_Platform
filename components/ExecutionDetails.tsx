@@ -28,20 +28,27 @@ function healingStatusLabel(status: HealingStatus) {
   return status === "proposed" ? "待确认" : status === "applied" ? "已应用" : "已忽略";
 }
 
-/** 用容器宽度适配日志和截图，兼容监控侧栏与报告页两种详情宽度。 */
-export function ExecutionDetails({
-  executionId,
-  tasks,
-  onTaskUpdated,
-  onSelectExecution,
-}: {
+type ExecutionDetailsProps = {
   executionId: string;
   tasks: AutomationTask[];
   /** 任务定义被修复写回后通知父页面，避免任务名和后续编辑使用旧数据。 */
   onTaskUpdated?: (task: AutomationTask) => void;
   /** 流程报告允许点击子用例跳到其步骤详情，避免用户手动在左侧列表查找。 */
   onSelectExecution?: (executionId: string) => void;
-}) {
+};
+
+/** 切换执行时重建详情状态，旧记录的异步生成结果不能覆盖新记录或留下“生成中”。 */
+export function ExecutionDetails(props: ExecutionDetailsProps) {
+  return <ExecutionDetailsView key={props.executionId} {...props} />;
+}
+
+/** 用容器宽度适配日志和截图，兼容监控侧栏与报告页两种详情宽度。 */
+function ExecutionDetailsView({
+  executionId,
+  tasks,
+  onTaskUpdated,
+  onSelectExecution,
+}: ExecutionDetailsProps) {
   const [execution, setExecution] = useState<TaskExecution | null>(null);
   const [workflowChildren, setWorkflowChildren] = useState<TaskExecution[]>([]);
   const [error, setError] = useState("");
@@ -110,8 +117,9 @@ export function ExecutionDetails({
           )
       : undefined;
 
+  /** 生成中、请求失败和已有候选分别展示，避免把等待或失败误报成尚未生成。 */
   async function handleGenerateHealing() {
-    if (!execution || !healableFailure) return;
+    if (!execution || !healableFailure || healingBusy || !task) return;
     setHealingBusy(true);
     setHealingError("");
     try {
@@ -430,13 +438,13 @@ export function ExecutionDetails({
       </div>
 
       {execution.status === "failed" && execution.runner !== "midscene" ? (
-        <section className="panel" style={{ marginTop: 16 }}>
+        <section className="panel" style={{ marginTop: 16 }} aria-busy={healingBusy}>
           <div className="panel-header">
             <h2 className="panel-title">失败修复建议</h2>
             {healableFailure ? (
               <button
                 className="button small primary"
-                disabled={healingBusy}
+                disabled={healingBusy || !task}
                 onClick={() => void handleGenerateHealing()}
               >
                 <Wrench size={14} aria-hidden />
@@ -446,9 +454,23 @@ export function ExecutionDetails({
           </div>
           <div className="panel-body">
             <p className="muted" style={{ marginTop: 0 }}>
-              仅分析 Playwright click / fill 定位器失败；候选会在失败前步骤重放后验证可见性，确认应用前不会修改任务。
+              根据失败截图分析定位器，并回到页面验证。建议生成后，确认应用才会更新用例。
             </p>
-            <p className="error-text">{healingError}</p>
+            {/* 等待和错误优先于空状态；已有建议仍可查看，便于比较再次生成的结果。 */}
+            {healingBusy ? (
+              <div className={styles.healingFeedback} role="status" aria-live="polite">
+                <RefreshCw size={18} className={styles.spinner} aria-hidden />
+                <div>
+                  <strong>正在生成修复建议</strong>
+                  <p className="muted">正在分析失败截图并验证候选定位器，请稍候。</p>
+                </div>
+              </div>
+            ) : null}
+            {healingError ? (
+              <div className={`${styles.healingFeedback} error-text`} role="alert">
+                {healingError}
+              </div>
+            ) : null}
             {execution.healing?.length ? (
               <ul className="healing-list">
                 {execution.healing.map((healing) => (
@@ -489,10 +511,12 @@ export function ExecutionDetails({
                   </li>
                 ))}
               </ul>
+            ) : healingBusy || healingError ? null : !task ? (
+              <div className={styles.healingFeedback}>关联用例已删除，无法生成修复建议。</div>
             ) : healableFailure ? (
-              <div className="empty">尚未生成修复建议</div>
+              <div className={styles.healingFeedback}>尚未生成修复建议</div>
             ) : (
-              <div className="empty">当前失败没有可修复的 click / fill 定位器</div>
+              <div className={styles.healingFeedback}>当前失败没有可修复的 click / fill 定位器</div>
             )}
           </div>
         </section>
