@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WandSparkles } from "lucide-react";
 import { createTaskFromScript } from "@/lib/client";
+import type { BrowserId } from "@/lib/types";
 
 // 示例步骤只作为引导展示；初始值保持为空，避免用户打开表单时误认为脚本已准备好执行。
 const scriptPlaceholder = [
@@ -17,12 +18,21 @@ const scriptPlaceholder = [
   "断言页面包含 “登录成功”",
 ].join("\n");
 
+const browserOptions: Array<{ value: BrowserId; label: string }> = [
+  { value: "chromium", label: "Chromium" },
+  { value: "firefox", label: "Firefox" },
+  { value: "webkit", label: "WebKit" },
+];
+
 export function ScriptTaskForm() {
   const router = useRouter();
-  const [name, setName] = useState("自然语言登录用例");
+  // 示例名称只用于引导填写；保持真实值为空，避免用户误提交预置用例名称。
+  const [name, setName] = useState("");
   const [script, setScript] = useState("");
   const [headless, setHeadless] = useState(true);
   const [runner, setRunner] = useState<"playwright" | "midscene">("playwright");
+  // Chromium 是跨平台默认内核；切换后随任务 runtime 保存并交给执行器启动对应浏览器。
+  const [browser, setBrowser] = useState<BrowserId>("chromium");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -36,7 +46,7 @@ export function ScriptTaskForm() {
         script,
         headless,
         runner,
-        runtime: { browser: "chromium", retries: 0, trace: false },
+        runtime: { browser, retries: 0, trace: false },
       });
       router.push(`/executions?focus=${result.execution.id}`);
     } catch (caught) {
@@ -59,6 +69,7 @@ export function ScriptTaskForm() {
             <input
               id="script-name"
               value={name}
+              placeholder="自然语言登录用例"
               onChange={(event) => setName(event.target.value)}
               required
             />
@@ -96,6 +107,20 @@ export function ScriptTaskForm() {
             >
               <option value="playwright">Playwright（确定性）</option>
               <option value="midscene">Midscene（AI）</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="script-browser">浏览器引擎</label>
+            <select
+              id="script-browser"
+              value={browser}
+              onChange={(event) => setBrowser(event.target.value as BrowserId)}
+            >
+              {browserOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>

@@ -2,9 +2,9 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Pencil, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import type { AutomationTask, TaskExecution, TestWorkflow } from "@/lib/types";
 import {
   canManuallyRetry,
@@ -60,6 +60,53 @@ export default function TasksPage() {
   const [editing, setEditing] = useState<AutomationTask | null | undefined>(undefined);
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState("");
+  const editorDialogRef = useRef<HTMLElement | null>(null);
+  const editorTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // 弹窗打开后把键盘焦点留在编辑器内，并在关闭时回到触发按钮，避免键盘用户迷失位置。
+  useEffect(() => {
+    if (editing === undefined) return;
+    const dialog = editorDialogRef.current;
+    if (!dialog) return;
+    const dialogElement = dialog;
+    const focusableSelector =
+      "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
+    const focusFirstControl = () => {
+      dialogElement.querySelector<HTMLElement>(focusableSelector)?.focus();
+    };
+    focusFirstControl();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setEditing(undefined);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(dialogElement.querySelectorAll<HTMLElement>(focusableSelector));
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    dialogElement.addEventListener("keydown", handleKeyDown);
+    return () => {
+      dialogElement.removeEventListener("keydown", handleKeyDown);
+      editorTriggerRef.current?.focus();
+    };
+  }, [editing]);
+
+  function openEditor(task: AutomationTask | null, trigger: HTMLButtonElement) {
+    editorTriggerRef.current = trigger;
+    setEditing(task);
+  }
 
   const refresh = useCallback(async () => {
     // 单用例、组合和执行历史一起刷新；列表需要历史结果来决定重试入口。
@@ -148,27 +195,54 @@ export default function TasksPage() {
             规则脚本可直接执行；AI 生成结果需预览确认后保存。
           </p>
         </div>
-        <button className="button primary" onClick={() => setEditing(null)}>
+        <button
+          className="button primary"
+          onClick={(event) => openEditor(null, event.currentTarget)}
+        >
           <Plus size={16} aria-hidden />
           新建用例
         </button>
       </div>
 
       {editing !== undefined ? (
-        <section className="panel" style={{ marginBottom: 16 }}>
-          <div className="panel-header">
-            <h2 className="panel-title">{editing ? "编辑用例" : "新建用例"}</h2>
-          </div>
-          <TaskEditor
-            task={editing}
-            onSaved={async () => {
-              setEditing(undefined);
-              setMessage("用例已保存");
-              await refresh();
-            }}
-            onCancel={() => setEditing(undefined)}
-          />
-        </section>
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setEditing(undefined);
+          }}
+        >
+          <section
+            className="modal-dialog"
+            ref={editorDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-editor-title"
+          >
+            <div className="panel-header">
+              <h2 id="task-editor-title" className="panel-title">
+                {editing ? "编辑用例" : "新建用例"}
+              </h2>
+              <button
+                type="button"
+                className="button small"
+                aria-label="关闭编辑弹窗"
+                onClick={() => setEditing(undefined)}
+              >
+                <X size={16} aria-hidden />
+              </button>
+            </div>
+            <TaskEditor
+              task={editing}
+              onSaved={async () => {
+                setEditing(undefined);
+                setMessage("用例已保存");
+                await refresh();
+              }}
+              onCancel={() => setEditing(undefined)}
+            />
+          </section>
+        </div>
       ) : null}
 
       {/* 两个创建入口并列展示：规则解析适合固定话术，AI 生成适合开放业务需求。 */}
@@ -251,7 +325,10 @@ export default function TasksPage() {
                           </button>
                         );
                       })()}
-                      <button className="button small" onClick={() => setEditing(task)}>
+                      <button
+                        className="button small"
+                        onClick={(event) => openEditor(task, event.currentTarget)}
+                      >
                         <Pencil size={14} aria-hidden />
                         编辑
                       </button>

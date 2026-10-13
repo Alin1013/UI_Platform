@@ -8,3 +8,5 @@ out/
 .env.local
 *.tsbuildinfo
 next-env.d.ts
+.venv/*
+.playwright-cli/*

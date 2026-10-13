@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Save, Sparkles } from "lucide-react";
 import type { AutomationTask } from "@/lib/types";
+import type { BrowserId } from "@/lib/types";
 import type { TaskDraft } from "@/lib/validation";
 import { createTask, generateTaskDraft } from "@/lib/client";
 import styles from "./AiTaskForm.module.css";
@@ -19,6 +20,8 @@ export function AiTaskForm({ onSaved }: { onSaved: () => Promise<void> | void })
   // 示例地址仅作占位提示，实际 URL 由用户输入，避免默认提交演示页。
   const [targetUrl, setTargetUrl] = useState("");
   const [runner, setRunner] = useState<AutomationTask["runner"]>("playwright");
+  // AI 草稿也记录浏览器内核，确保预览保存后的执行配置与用户选择一致。
+  const [browser, setBrowser] = useState<BrowserId>("chromium");
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,6 +37,7 @@ export function AiTaskForm({ onSaved }: { onSaved: () => Promise<void> | void })
         requirement,
         targetUrl,
         runner,
+        runtime: { browser, retries: 0, trace: false },
         save: false,
       });
       setDraft(payload.draft);
@@ -99,6 +103,18 @@ export function AiTaskForm({ onSaved }: { onSaved: () => Promise<void> | void })
             >
               <option value="playwright">Playwright（确定性）</option>
               <option value="midscene">Midscene（AI）</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ai-browser">浏览器引擎</label>
+            <select
+              id="ai-browser"
+              value={browser}
+              onChange={(event) => setBrowser(event.target.value as BrowserId)}
+            >
+              <option value="chromium">Chromium</option>
+              <option value="firefox">Firefox</option>
+              <option value="webkit">WebKit</option>
             </select>
           </div>
           <div className="field wide">
