@@ -19,7 +19,8 @@ const scriptPlaceholder = [
 
 export function ScriptTaskForm() {
   const router = useRouter();
-  const [name, setName] = useState("自然语言登录用例");
+  // 示例名称只用于引导填写；保持真实值为空，避免用户误提交预置用例名称。
+  const [name, setName] = useState("");
   const [script, setScript] = useState("");
   const [headless, setHeadless] = useState(true);
   const [runner, setRunner] = useState<"playwright" | "midscene">("playwright");
@@ -59,6 +60,7 @@ export function ScriptTaskForm() {
             <input
               id="script-name"
               value={name}
+              placeholder="自然语言登录用例"
               onChange={(event) => setName(event.target.value)}
               required
             />
