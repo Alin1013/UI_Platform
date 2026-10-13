@@ -145,6 +145,15 @@ export function loadExecution(id: string) {
   }>(`/api/executions/${id}`);
 }
 
+/** 单条/批量删除使用各自接口，返回级联删除 ID 以便列表和详情同时更新。 */
+export function removeExecutions(ids: string[]) {
+  const single = ids.length === 1;
+  return requestJson<{ ok: boolean; deletedIds: string[] }>(
+    single ? `/api/executions/${encodeURIComponent(ids[0]!)}` : "/api/executions",
+    { method: "DELETE", ...(single ? {} : { body: JSON.stringify({ ids }) }) },
+  );
+}
+
 /** 以一次历史执行为基准重新入队；服务端会按其 kind 自动重试单用例或组合。 */
 export function retryExecution(id: string) {
   return requestJson<{ execution: TaskExecution }>(
