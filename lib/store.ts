@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   environments as environmentsTable,
@@ -219,6 +219,47 @@ export async function getExecution(
   return (rows[0] as TaskExecution) ?? undefined;
 }
 
+/** 删除校验失败保留 HTTP 语义，单条和批量接口共享相同的边界。 */
+export class ExecutionDeletionError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+  }
+}
+
+/** 原子删除已结束执行；组合父记录级联子记录，活动组合的任一成员都受到保护。 */
+export async function deleteExecutions(ids: string[]): Promise<string[]> {
+  await recoveryPromise;
+  return db.transaction((transaction) => {
+    // 同步事务内完成查找、校验和删除，避免批量失败时已经删掉部分记录。
+    const all = transaction.select().from(executionsTable).all() as TaskExecution[];
+    const requestedIds = new Set(ids);
+    if (!requestedIds.size) {
+      throw new ExecutionDeletionError("请选择要删除的执行记录", 400);
+    }
+    if ([...requestedIds].some((id) => !all.some((item) => item.id === id))) {
+      throw new ExecutionDeletionError("执行记录不存在，请刷新后重试", 404);
+    }
+    const workflowIds = new Set(
+      all.filter((item) => requestedIds.has(item.id) && item.kind === "workflow")
+        .map((item) => item.id),
+    );
+    const targets = all.filter((item) => requestedIds.has(item.id) ||
+      Boolean(item.workflowExecutionId && workflowIds.has(item.workflowExecutionId)));
+    const affectedWorkflowIds = new Set(targets.map((item) => item.workflowExecutionId ?? item.id));
+    const hasActiveExecution = all.some((item) =>
+      (item.status === "queued" || item.status === "running") &&
+      (affectedWorkflowIds.has(item.id) ||
+        Boolean(item.workflowExecutionId && affectedWorkflowIds.has(item.workflowExecutionId))));
+    if (hasActiveExecution) {
+      throw new ExecutionDeletionError("排队中或执行中的记录及其流程记录不能删除，请等待执行结束", 409);
+    }
+    const deleted = transaction.delete(executionsTable)
+      .where(inArray(executionsTable.id, targets.map((item) => item.id)))
+      .returning({ id: executionsTable.id }).all();
+    return deleted.map((item) => item.id);
+  });
+}
+
 export async function saveExecution(
   execution: TaskExecution,
 ): Promise<TaskExecution> {
@@ -258,7 +299,10 @@ export async function updateExecution(
   const current = await getExecution(id);
   if (!current) return undefined;
   const next = updater(current);
-  return saveExecution(next);
+  // 读取后记录可能被删除；更新只能命中现有行，不能通过 upsert 复活旧日志或修复请求。
+  const rows = await db.update(executionsTable).set(next)
+    .where(eq(executionsTable.id, id)).returning();
+  return (rows[0] as TaskExecution) ?? undefined;
 }
 
 /** 仪表盘统计；用 SQL 聚合替代 JSON 版本的全量读取。 */
