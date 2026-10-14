@@ -419,6 +419,12 @@ main {
   gap: 6px;
 }
 
+/* 必填标识和浏览器 required 语义同时呈现，用户提交前即可知道字段要求。 */
+.requiredMark {
+  color: var(--danger);
+  font-style: normal;
+}
+
 .field.wide,
 .full-width {
   grid-column: 1 / -1;

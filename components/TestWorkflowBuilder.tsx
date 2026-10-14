@@ -175,8 +175,8 @@ export function TestWorkflowBuilder({
         <div className={styles.sectionHeading}>
           <div><span className={styles.eyebrow}>SETTINGS</span><h2>{workflow ? "编辑工作流" : "工作流信息"}</h2></div>
         </div>
-        <label className="field" htmlFor="test-workflow-name">工作流名称
-          <input id="test-workflow-name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="例如：核心登录回归" />
+        <label className="field" htmlFor="test-workflow-name">工作流名称 <em className="requiredMark" aria-hidden="true">*</em>
+          <input id="test-workflow-name" required aria-label="工作流名称" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="例如：核心登录回归" />
         </label>
         <label className="field" htmlFor="test-workflow-description">说明
           <textarea id="test-workflow-description" value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} rows={4} placeholder="可选" />

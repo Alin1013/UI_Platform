@@ -267,9 +267,11 @@ export function WorkflowBuilder({
         </div>
         <div className={styles.fields}>
           <label className="field" htmlFor="workflow-name">
-            <span>组合名称</span>
+            <span>组合名称 <em className="requiredMark" aria-hidden="true">*</em></span>
             <input
               id="workflow-name"
+              required
+              aria-label="组合名称"
               value={draft.name}
               onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
               placeholder="例如：登录后创建订单"
