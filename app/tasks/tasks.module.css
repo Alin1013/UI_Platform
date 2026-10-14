@@ -3,11 +3,14 @@
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 30px;
-  align-items: start;
+  /* 侧栏与内容区等高，避免导航面板在页面中段突然结束。 */
+  align-items: stretch;
 }
 .sidebar {
   position: sticky;
   top: 24px;
+  /* 高度随网格行填满桌面内容，底部留白转为统一的导航背景。 */
+  min-height: 100%;
   padding: 18px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -343,9 +346,11 @@
   .shell {
     grid-template-columns: minmax(0, 1fr);
     gap: 20px;
+    align-items: start;
   }
   .sidebar {
     position: static;
+    min-height: 0;
     padding: 12px;
   }
   .sidebar > p {
