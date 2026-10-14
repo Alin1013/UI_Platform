@@ -97,10 +97,15 @@ button:disabled {
   font-weight: 600;
 }
 
-.main-nav a:hover,
-.main-nav a.active {
+.main-nav a:hover {
   background: var(--surface-muted);
   color: var(--ink);
+}
+
+/* 当前模块使用蓝色高亮，悬停到其他入口时仍能辨认所在页面。 */
+.main-nav a.active {
+  background: #edf3ff;
+  color: var(--accent);
 }
 
 main {
