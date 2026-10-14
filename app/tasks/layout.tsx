@@ -23,8 +23,14 @@ const navigation = [
 export default function TasksLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const editing = pathname.endsWith("/edit");
-  const current =
-    navigation.find((item) => item.href === pathname)?.label ?? "编辑用例";
+  const workflowPage = pathname.startsWith("/tasks/workflows");
+  const current = workflowPage
+    ? editing
+      ? "编辑组合"
+      : pathname.endsWith("/new")
+        ? "新建组合"
+        : "组合管理"
+    : navigation.find((item) => item.href === pathname)?.label ?? "编辑用例";
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
@@ -35,7 +41,9 @@ export default function TasksLayout({ children }: { children: ReactNode }) {
         <nav className={styles.navigation} aria-label="任务管理二级导航">
           {navigation.map(({ href, label, icon: Icon }) => {
             const active =
-              pathname === href || (editing && href === "/tasks/list");
+              pathname === href ||
+              (editing && href === "/tasks/list") ||
+              (workflowPage && href === "/tasks/workflows");
             return (
               <Link
                 key={href}
@@ -58,7 +66,13 @@ export default function TasksLayout({ children }: { children: ReactNode }) {
             <>
               <Link href="/tasks">任务管理</Link>
               <ChevronRight size={14} aria-hidden />
-              {editing ? (
+              {workflowPage && pathname !== "/tasks/workflows" ? (
+                <>
+                  <Link href="/tasks/workflows">组合管理</Link>
+                  <ChevronRight size={14} aria-hidden />
+                </>
+              ) : null}
+              {editing && !workflowPage ? (
                 <>
                   <Link href="/tasks/list">用例列表</Link>
                   <ChevronRight size={14} aria-hidden />

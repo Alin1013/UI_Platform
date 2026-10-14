@@ -84,6 +84,11 @@ try {
       };
       workflows.push(workflow);
       payload = { workflow };
+    } else if (method === "PUT" && path.startsWith("/api/workflows/")) {
+      const workflowId = path.split("/").at(-1);
+      const index = workflows.findIndex((workflow) => workflow.id === workflowId);
+      workflows[index] = { ...workflows[index], ...request.postDataJSON() };
+      payload = { workflow: workflows[index] };
     } else if (
       method === "POST" &&
       (path.endsWith("/run") ||
@@ -226,14 +231,24 @@ try {
   await page.waitForURL("**/executions?focus=new-execution");
 
   await page.goto(`${origin}/tasks/workflows`);
-  await page.getByRole("heading", { name: "流程组合", exact: true }).waitFor();
-  await page.getByRole("button", { name: "新建组合", exact: true }).click();
+  await page.getByRole("heading", { name: "组合列表", exact: true }).waitFor();
+  await page.getByRole("link", { name: "新建组合", exact: true }).click();
+  await page.waitForURL("**/tasks/workflows/new");
   await page.getByLabel("组合名称", { exact: true }).fill("新建业务组合");
-  await page
-    .getByRole("checkbox", { name: "登录流程已修改", exact: true })
-    .check();
+  await page.getByRole("button", { name: /添加用例 登录流程已修改/ }).click();
   await page.getByRole("button", { name: "保存组合", exact: true }).click();
+  await page.waitForURL("**/tasks/workflows");
   await page.getByRole("cell", { name: "新建业务组合", exact: true }).waitFor();
+  await page
+    .getByRole("row")
+    .filter({ has: page.getByRole("cell", { name: "新建业务组合", exact: true }) })
+    .getByRole("link", { name: "编辑", exact: true })
+    .click();
+  await page.waitForURL("**/tasks/workflows/saved-workflow/edit");
+  await page.getByLabel("组合名称", { exact: true }).fill("新建业务组合已修改");
+  await page.getByRole("button", { name: "保存修改", exact: true }).click();
+  await page.waitForURL("**/tasks/workflows");
+  await page.getByRole("cell", { name: "新建业务组合已修改", exact: true }).waitFor();
   await page
     .getByRole("row")
     .filter({ has: page.getByRole("cell", { name: "登录组合", exact: true }) })
@@ -254,19 +269,23 @@ try {
       "/tasks/new",
       "/tasks/task-fixture/edit",
       "/tasks/workflows",
+      "/tasks/workflows/new",
+      "/tasks/workflows/workflow-fixture/edit",
     ]) {
       await page.goto(`${origin}${route}`);
       await page.getByRole("heading", { level: 1 }).waitFor();
-      if (route.includes("edit") || route.endsWith("new"))
+      if (route === "/tasks/new" || route === "/tasks/task-fixture/edit")
         await page.getByLabel("任务名称", { exact: true }).waitFor();
       if (route.endsWith("list"))
         await page
           .getByRole("cell", { name: "登录流程已修改", exact: true })
           .waitFor();
-      if (route.endsWith("workflows"))
+      if (route === "/tasks/workflows")
         await page
-          .getByRole("heading", { name: "流程组合", exact: true })
+          .getByRole("heading", { name: "组合列表", exact: true })
           .waitFor();
+      if (route === "/tasks/workflows/new" || route.endsWith("/workflows/workflow-fixture/edit"))
+        await page.getByLabel("组合名称", { exact: true }).waitFor();
       const size = await page.evaluate(() => ({
         viewport: window.innerWidth,
         content: document.documentElement.scrollWidth,

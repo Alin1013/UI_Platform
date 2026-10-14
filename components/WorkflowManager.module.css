@@ -1,160 +1,81 @@
-/* 流程组合编辑布局：选择、排序和保存各自成区，样式仅作用于组合管理器。 */
+/* 组合列表只承载扫描和操作，编辑布局由 WorkflowBuilder 独立负责。 */
 .header {
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .title {
   margin: 0;
 }
 
-.headerActions,
-.sectionHeading {
+.subtitle {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.headerActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
   gap: 12px;
-}
-
-.intro {
-  margin: 0 0 18px;
-}
-
-/* 两列均允许收缩，长用例名称不会撑宽整个页面；编辑区保留更多空间。 */
-.builder {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  align-items: start;
-  gap: 18px;
-}
-
-.picker,
-.editor {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.picker {
-  padding: 16px;
-  background: var(--background);
-}
-
-/* 候选过多时只滚动选择列表，保持表单和保存入口可见。 */
-.taskList {
-  display: grid;
-  gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-  margin-top: 12px;
-}
-
-.taskOption {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  cursor: pointer;
-}
-
-.taskOption input {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
 }
 
-.taskOption span,
-.orderName {
-  min-width: 0;
+.message {
+  margin: 16px 18px 0;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.tableScroll table {
+  min-width: 780px;
+}
+
+.orderCell {
+  max-width: 340px;
   overflow-wrap: anywhere;
 }
 
-.selected {
-  border-color: var(--accent);
-  background: #eff6ff;
-}
-
-.editorBody {
-  display: grid;
-  gap: 20px;
-  padding: 16px;
-}
-
-.order {
-  display: grid;
-  gap: 10px;
-}
-
-.orderItem {
+/* 操作按钮必须保持一行，避免窄列把“运行/重试/编辑/删除”拆开。 */
+.rowActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-
-.orderName {
-  font-weight: 600;
-}
-
-.orderActions {
-  display: flex;
-  flex-shrink: 0;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 260px;
+  white-space: nowrap;
 }
 
-.editorActions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 16px;
-  border-top: 1px solid var(--line);
-  background: var(--background);
+.rowActions a {
+  text-decoration: none;
 }
 
 .empty {
-  margin: 16px 0 0;
-  padding: 16px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 72px 20px;
+  color: var(--muted);
   text-align: center;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
 }
 
-/* 已保存组合的宽表仅在自身区域滚动，避免移动端把页面撑出视口。 */
-.savedWorkflows {
-  margin-top: 20px;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+.empty strong {
+  color: var(--ink);
+  font-size: 16px;
 }
 
-@media (max-width: 900px) {
-  .builder {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.empty p {
+  margin: 0;
 }
 
 @media (max-width: 600px) {
-  .orderItem {
-    flex-wrap: wrap;
+  .header {
+    flex-direction: column;
   }
 
-  .orderActions {
-    margin-left: auto;
-  }
-
-  .editorActions > button {
-    flex: 1 1 120px;
+  .headerActions {
+    width: 100%;
+    justify-content: space-between;
   }
 }
