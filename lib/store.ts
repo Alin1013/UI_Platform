@@ -180,7 +180,9 @@ export async function saveWorkflow(
       set: {
         name: workflow.name,
         description: workflow.description,
+        kind: workflow.kind ?? "composition",
         taskIds: workflow.taskIds,
+        nodes: workflow.nodes,
         updatedAt: workflow.updatedAt,
       },
     });
@@ -270,6 +272,7 @@ export async function saveExecution(
       kind: execution.kind,
       workflowId: execution.workflowId,
       workflowName: execution.workflowName,
+      workflowKind: execution.workflowKind,
       workflowTaskIds: execution.workflowTaskIds,
       workflowExecutionId: execution.workflowExecutionId,
       workflowOrder: execution.workflowOrder,

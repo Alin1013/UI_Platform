@@ -76,9 +76,10 @@ try {
       tasks = tasks.filter((task) => task.id !== "task-fixture");
       payload = { ok: true };
     } else if (method === "POST" && path === "/api/workflows") {
+      const requestBody = request.postDataJSON();
       const workflow = {
-        ...request.postDataJSON(),
-        id: "saved-workflow",
+        ...requestBody,
+        id: requestBody.kind === "test-workflow" ? "saved-test-workflow" : "saved-workflow",
         createdAt: date,
         updatedAt: date,
       };
@@ -260,6 +261,32 @@ try {
     "组合重试采用父执行",
   );
 
+  // 混合编排必须保留节点类型与顺序，编辑页刷新后也要恢复同一条执行链。
+  await page.goto(`${origin}/tasks/test-workflows`);
+  await page.getByRole("heading", { name: "测试工作流", level: 1 }).waitFor();
+  await page.getByRole("link", { name: "新建工作流", exact: true }).first().click();
+  await page.waitForURL("**/tasks/test-workflows/new");
+  await page.getByLabel("工作流名称", { exact: true }).fill("核心回归工作流");
+  await page.getByRole("button", { name: /添加单测试用例 登录流程已修改/ }).click();
+  await page.getByRole("button", { name: /添加组合测试流 新建业务组合已修改/ }).click();
+  const canvas = page.getByRole("region", { name: "测试工作流画布" });
+  assert.equal(await canvas.locator("article").count(), 2, "画布同时接收单用例和组合节点");
+  await page.getByRole("button", { name: "上移第 2 个节点" }).click();
+  assert.match(await canvas.locator("article").first().innerText(), /新建业务组合已修改/, "节点排序改变执行顺序");
+  await page.getByRole("button", { name: "下移第 1 个节点" }).click();
+  await page.getByRole("button", { name: "保存工作流", exact: true }).click();
+  await page.waitForURL("**/tasks/test-workflows");
+  await page.getByRole("cell", { name: "核心回归工作流", exact: true }).waitFor();
+  const savedTestWorkflow = workflows.find((workflow) => workflow.id === "saved-test-workflow");
+  assert.equal(savedTestWorkflow?.kind, "test-workflow", "保存使用测试工作流类型和节点格式");
+  assert.equal(savedTestWorkflow?.nodes?.length, 2, "保存保留全部混合节点");
+  await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "核心回归工作流", exact: true }) }).getByRole("link", { name: "编辑", exact: true }).click();
+  await page.waitForURL("**/tasks/test-workflows/saved-test-workflow/edit");
+  await page.reload();
+  await page.getByLabel("工作流名称", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("工作流名称", { exact: true }).inputValue(), "核心回归工作流", "直接刷新编辑路由恢复工作流信息");
+  assert.equal(await page.getByRole("region", { name: "测试工作流画布" }).locator("article").count(), 2, "直接刷新编辑路由恢复节点列表");
+
   // 覆盖桌面、手机和边界宽度，表格可局部滚动，所有页面不能产生页面级水平溢出。
   for (const width of [1244, 900, 768, 390]) {
     await page.setViewportSize({ width, height: 801 });
@@ -271,6 +298,9 @@ try {
       "/tasks/workflows",
       "/tasks/workflows/new",
       "/tasks/workflows/workflow-fixture/edit",
+      "/tasks/test-workflows",
+      "/tasks/test-workflows/new",
+      "/tasks/test-workflows/saved-test-workflow/edit",
     ]) {
       await page.goto(`${origin}${route}`);
       await page.getByRole("heading", { level: 1 }).waitFor();
@@ -286,6 +316,10 @@ try {
           .waitFor();
       if (route === "/tasks/workflows/new" || route.endsWith("/workflows/workflow-fixture/edit"))
         await page.getByLabel("组合名称", { exact: true }).waitFor();
+      if (route === "/tasks/test-workflows/new" || route.endsWith("/test-workflows/saved-test-workflow/edit"))
+        await page.getByLabel("工作流名称", { exact: true }).waitFor();
+      if (route === "/tasks/test-workflows")
+        await page.getByRole("heading", { name: "工作流列表", exact: true }).waitFor();
       const size = await page.evaluate(() => ({
         viewport: window.innerWidth,
         content: document.documentElement.scrollWidth,

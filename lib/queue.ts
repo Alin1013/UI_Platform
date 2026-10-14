@@ -3,7 +3,12 @@
  * 单机部署时全局运行集合能精确限制并发；如果改为多进程，应替换为 BullMQ/Redis。
  */
 
-import type { ExecutionStatus, TaskExecution, TestEnvironment } from "./types";
+import type {
+  ExecutionStatus,
+  TaskExecution,
+  TestEnvironment,
+  WorkflowNode,
+} from "./types";
 import type { RunnerArtifacts } from "./executor";
 import {
   getEnvironment,
@@ -225,7 +230,7 @@ export async function enqueueExecution(
   taskId: string,
   workflow?: Pick<
     TaskExecution,
-    "workflowId" | "workflowName" | "workflowExecutionId" | "workflowOrder"
+    "workflowId" | "workflowName" | "workflowKind" | "workflowExecutionId" | "workflowOrder"
   >,
 ): Promise<TaskExecution> {
   const task = await getTask(taskId);
@@ -246,6 +251,22 @@ export async function enqueueExecution(
   await saveExecution(execution);
   void drainQueue();
   return execution;
+}
+
+/** 将任意层级的组合节点展开为单用例序列，同时阻止循环引用。 */
+async function expandWorkflowTasks(workflowId: string, stack: string[] = []): Promise<string[]> {
+  if (stack.includes(workflowId)) {
+    throw new Error("工作流存在循环引用，请调整节点后重试");
+  }
+  const workflow = await getWorkflow(workflowId);
+  if (!workflow) throw new Error("引用的组合不存在，请编辑工作流");
+  const nodes: WorkflowNode[] = workflow.nodes ?? workflow.taskIds.map((taskId) => ({ type: "task", taskId }));
+  const tasks: string[] = [];
+  for (const node of nodes) {
+    if (node.type === "task") tasks.push(node.taskId);
+    else tasks.push(...(await expandWorkflowTasks(node.workflowId, [...stack, workflowId])));
+  }
+  return tasks;
 }
 
 /** 组合父执行不进普通并发队列；这里的 Promise 就是该流程的串行编排器。 */
@@ -278,6 +299,7 @@ async function runWorkflow(parentExecutionId: string): Promise<void> {
     const child = await enqueueExecution(task.id, {
       workflowId: parent.workflowId,
       workflowName: parent.workflowName,
+      workflowKind: parent.workflowKind,
       workflowExecutionId: parent.id,
       workflowOrder: order,
     });
@@ -367,7 +389,7 @@ export async function enqueueWorkflowExecution(
     throw new Error("该流程组合正在执行中");
   }
 
-  const taskIds = workflow.taskIds;
+  const taskIds = await expandWorkflowTasks(workflowId);
   // 逐个检查用例存在性；数量上限 20，不会形成有意义的调度开销。
   const taskPresence = await Promise.all(
     taskIds.map(async (taskId) => Boolean(await getTask(taskId))),
@@ -382,6 +404,46 @@ export async function enqueueWorkflowExecution(
     kind: "workflow",
     workflowId,
     workflowName: workflow.name,
+    workflowKind: workflow.kind ?? "composition",
+    workflowTaskIds: taskIds,
+    status: "queued",
+    queuedAt: new Date().toISOString(),
+    totalSteps: taskIds.length,
+    logs: [],
+  };
+  await saveExecution(execution);
+  void runWorkflow(execution.id);
+  return execution;
+}
+
+/** 测试工作流与普通组合共享报告和调度状态机，只在定义展开时增加组合引用。 */
+export async function enqueueTestWorkflowExecution(
+  workflowId: string,
+): Promise<TaskExecution> {
+  const workflow = await getWorkflow(workflowId);
+  if (!workflow || workflow.kind !== "test-workflow") {
+    throw new Error("测试工作流不存在");
+  }
+  const executions = await listExecutions();
+  if (executions.some((execution) =>
+    execution.kind === "workflow" && execution.workflowId === workflowId &&
+    (execution.status === "queued" || execution.status === "running"))) {
+    throw new Error("该测试工作流正在执行中");
+  }
+  const taskIds = await expandWorkflowTasks(workflowId);
+  if (!taskIds.length) throw new Error("测试工作流没有可执行用例");
+  if (taskIds.length > 100) throw new Error("展开后的测试工作流最多执行 100 个用例");
+  const taskPresence = await Promise.all(taskIds.map(async (taskId) => Boolean(await getTask(taskId))));
+  if (taskPresence.some((exists) => !exists)) {
+    throw new Error("工作流中存在已删除的用例，请编辑后重新运行");
+  }
+  const execution: TaskExecution = {
+    id: crypto.randomUUID(),
+    taskId: "",
+    kind: "workflow",
+    workflowId,
+    workflowName: workflow.name,
+    workflowKind: "test-workflow",
     workflowTaskIds: taskIds,
     status: "queued",
     queuedAt: new Date().toISOString(),

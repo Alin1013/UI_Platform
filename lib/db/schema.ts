@@ -39,7 +39,9 @@ export const workflows = sqliteTable("workflows", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  kind: text("kind").notNull().default("composition"),
   taskIds: text("task_ids", { mode: "json" }).notNull().default([]),
+  nodes: text("nodes", { mode: "json" }),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -51,6 +53,7 @@ export const executions = sqliteTable("executions", {
   kind: text("kind"),
   workflowId: text("workflow_id"),
   workflowName: text("workflow_name"),
+  workflowKind: text("workflow_kind"),
   workflowTaskIds: text("workflow_task_ids", { mode: "json" }),
   workflowExecutionId: text("workflow_execution_id"),
   workflowOrder: integer("workflow_order"),

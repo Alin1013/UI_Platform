@@ -28,6 +28,13 @@ const entries = [
     icon: Workflow,
     action: "管理组合",
   },
+  {
+    href: "/tasks/test-workflows",
+    title: "测试工作流",
+    text: "组合多个单测试用例或已有组合测试流，统一编排更完整的回归链。",
+    icon: Workflow,
+    action: "管理工作流",
+  },
 ];
 
 /** 概况只读取定义数量；运行结果与操作留在列表和组合页。 */
@@ -35,6 +42,7 @@ export default function TasksPage() {
   const [counts, setCounts] = useState<{
     tasks: number;
     workflows: number;
+    testWorkflows: number;
   } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -44,7 +52,8 @@ export default function TasksPage() {
         if (active)
           setCounts({
             tasks: tasks.tasks.length,
-            workflows: workflows.workflows.length,
+            workflows: workflows.workflows.filter((workflow) => workflow.kind !== "test-workflow").length,
+            testWorkflows: workflows.workflows.filter((workflow) => workflow.kind === "test-workflow").length,
           });
       })
       .catch((caught: unknown) => {
@@ -78,6 +87,10 @@ export default function TasksPage() {
           <div>
             <strong>{counts?.workflows ?? "—"}</strong>
             <span>个组合</span>
+          </div>
+          <div>
+            <strong>{counts?.testWorkflows ?? "—"}</strong>
+            <span>个测试工作流</span>
           </div>
         </div>
       </section>

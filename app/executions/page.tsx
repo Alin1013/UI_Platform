@@ -228,7 +228,7 @@ function ExecutionsView() {
                   >
                     <span>
                       {execution.kind === "workflow"
-                        ? (execution.workflowName ?? "流程组合")
+                        ? (execution.workflowName ?? (execution.workflowKind === "test-workflow" ? "测试工作流" : "流程组合"))
                         : (tasks.find((task) => task.id === execution.taskId)
                             ?.name ?? "未知任务")}
                     </span>

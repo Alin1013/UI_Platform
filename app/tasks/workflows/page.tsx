@@ -27,7 +27,8 @@ export default function WorkflowsPage() {
       loadExecutions(),
     ]);
     setTasks(taskPayload.tasks);
-    setWorkflows(workflowPayload.workflows);
+    // 组合页与测试工作流页是同级入口，避免测试工作流出现在旧组合表中。
+    setWorkflows(workflowPayload.workflows.filter((workflow) => workflow.kind !== "test-workflow"));
     setExecutions(executionPayload.executions);
   }, []);
 

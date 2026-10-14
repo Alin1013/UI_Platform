@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { cancelWorkflowExecution } from "@/lib/queue";
 import {
   deleteWorkflow,
+  getTask,
   getWorkflow,
   listExecutions,
   saveWorkflow,
@@ -29,6 +30,15 @@ export async function PUT(request: Request, context: RouteContext) {
   }
   try {
     const draft = parseWorkflowDraft(await request.json());
+    if (draft.kind === "test-workflow") {
+      // 测试工作流只允许引用基础组合，避免循环或多层嵌套导致执行树难以管理。
+      const references = await Promise.all(draft.nodes!.map(async (node) => {
+        if (node.type === "task") return Boolean(await getTask(node.taskId));
+        const workflow = await getWorkflow(node.workflowId);
+        return Boolean(workflow && workflow.kind !== "test-workflow");
+      }));
+      if (references.some((exists) => !exists)) throw new Error("工作流引用的用例或组合不存在");
+    }
     const workflow = await saveWorkflow(workflowFromDraft(draft, existing));
     return NextResponse.json({ workflow });
   } catch (error) {

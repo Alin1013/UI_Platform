@@ -64,7 +64,9 @@ sqlite.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
+    kind TEXT NOT NULL DEFAULT 'composition',
     task_ids TEXT NOT NULL DEFAULT '[]',
+    nodes TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -110,6 +112,7 @@ const executionMigrations: Array<[string, string]> = [
   ["kind", "TEXT"],
   ["workflow_id", "TEXT"],
   ["workflow_name", "TEXT"],
+  ["workflow_kind", "TEXT"],
   ["workflow_task_ids", "TEXT"],
   ["workflow_execution_id", "TEXT"],
   ["workflow_order", "INTEGER"],
@@ -118,6 +121,17 @@ for (const [column, type] of executionMigrations) {
   if (!executionColumns.some((item) => item.name === column)) {
     sqlite.exec(`ALTER TABLE executions ADD COLUMN ${column} ${type}`);
   }
+}
+
+// 新工作流定义以节点引用保存；旧数据库补列后仍按 composition + task_ids 读取。
+const workflowColumns = sqlite
+  .prepare("PRAGMA table_info(workflows)")
+  .all() as Array<{ name: string }>;
+if (!workflowColumns.some((column) => column.name === "kind")) {
+  sqlite.exec("ALTER TABLE workflows ADD COLUMN kind TEXT NOT NULL DEFAULT 'composition'");
+}
+if (!workflowColumns.some((column) => column.name === "nodes")) {
+  sqlite.exec("ALTER TABLE workflows ADD COLUMN nodes TEXT");
 }
 
 export const db = drizzle(sqlite, { schema });

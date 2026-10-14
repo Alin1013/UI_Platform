@@ -110,15 +110,24 @@ export interface AutomationTask {
   updatedAt: string;
 }
 
+/** 测试工作流节点；节点只引用定义，不复制单用例或组合的步骤。 */
+export type WorkflowNode =
+  | { type: "task"; taskId: string }
+  | { type: "workflow"; workflowId: string };
+
+export type WorkflowKind = "composition" | "test-workflow";
+
 /**
- * 用例组合定义；taskIds 顺序就是流程执行顺序。
- * 组合不复制用例步骤，运行时始终引用最新单用例，避免同一流程出现两份定义。
+ * 流程定义；旧组合继续使用 taskIds，新测试工作流使用有序 nodes。
+ * 两种定义共享执行编排器，因此历史组合可以平滑升级而不改变报告结构。
  */
 export interface TestWorkflow {
   id: string;
   name: string;
   description?: string;
+  kind?: WorkflowKind;
   taskIds: string[];
+  nodes?: WorkflowNode[];
   createdAt: string;
   updatedAt: string;
 }
@@ -176,6 +185,7 @@ export interface TaskExecution {
   /** 流程执行引用的组合 ID 与当时的组合名称，删除组合后报告仍可读。 */
   workflowId?: string;
   workflowName?: string;
+  workflowKind?: WorkflowKind;
   /** 父执行保存本次运行开始时的用例顺序快照。 */
   workflowTaskIds?: string[];
   /** 子执行回链父执行，便于报告页聚合展示。 */

@@ -1,0 +1,168 @@
+/* 测试工作流画布把“来源、顺序、属性”分成三列，窄屏时按操作顺序纵向堆叠。 */
+.builder {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.82fr) minmax(340px, 1.55fr) minmax(250px, 0.9fr);
+  min-height: 590px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.sources,
+.settings {
+  min-width: 0;
+  padding: 20px;
+  background: #fbfcfe;
+}
+
+.sources { border-right: 1px solid var(--line); }
+.settings { border-left: 1px solid var(--line); }
+
+.flow { min-width: 0; background: #f5f7fa; }
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionHeading h2 {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+
+.eyebrow {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sourceGroup { margin-top: 22px; }
+
+.sourceGroup h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.sourceGroup button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+
+.sourceGroup button + button { margin-top: 7px; }
+.sourceGroup button:hover:not(:disabled) { border-color: var(--accent); background: #f2f6ff; }
+.sourceGroup button span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.sourceGroup button strong { flex-shrink: 0; color: var(--accent); }
+
+.count {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.canvas {
+  display: flex;
+  min-height: 516px;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 20px 36px;
+}
+
+.terminal {
+  min-width: 78px;
+  padding: 6px 14px;
+  border: 1px solid #aebdcb;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.terminal.end { border-color: #b5d5c3; color: var(--success); }
+.arrow { height: 25px; color: #8b9aaa; font-size: 18px; line-height: 25px; }
+.nodeWrap { display: flex; flex-direction: column; align-items: center; width: min(100%, 460px); }
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #bcd0ee;
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(23 33 43 / 6%);
+}
+
+.nodeNumber {
+  display: grid;
+  flex: 0 0 25px;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e7efff;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nodeText { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.nodeText strong { overflow-wrap: anywhere; }
+.nodeText small { color: var(--muted); font-size: 10px; }
+.nodeActions { display: flex; flex-shrink: 0; gap: 4px; }
+.nodeActions .button.small { min-width: 30px; padding: 4px; }
+
+.settings label { margin-top: 20px; }
+.settings textarea { resize: vertical; }
+.policy {
+  margin: 22px 0 0;
+  padding: 12px;
+  border-left: 3px solid #b8cff9;
+  background: #f2f6ff;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.actions button { white-space: nowrap; }
+.emptyHint { margin: 16px 0; color: var(--muted); font-size: 13px; text-align: center; }
+
+@media (max-width: 1120px) {
+  .builder { grid-template-columns: minmax(190px, 0.82fr) minmax(320px, 1.3fr); }
+  .settings { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
+}
+
+@media (max-width: 700px) {
+  .builder { grid-template-columns: minmax(0, 1fr); }
+  .sources { border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings { grid-column: auto; border-top: 0; border-left: 0; }
+  .canvas { min-height: 420px; padding-inline: 12px; }
+  .sources, .settings { padding: 16px; }
+  .node { align-items: flex-start; flex-wrap: wrap; }
+  .nodeText { min-width: calc(100% - 45px); }
+  .nodeActions { width: 100%; justify-content: flex-end; }
+}

@@ -1,7 +1,8 @@
 /** 触发流程组合执行；返回父执行 ID，前端据此打开组合监控视图。 */
 
 import { NextResponse } from "next/server";
-import { enqueueWorkflowExecution } from "@/lib/queue";
+import { enqueueTestWorkflowExecution, enqueueWorkflowExecution } from "@/lib/queue";
+import { getWorkflow } from "@/lib/store";
 
 export async function POST(
   _request: Request,
@@ -9,7 +10,10 @@ export async function POST(
 ) {
   const { id } = await context.params;
   try {
-    const execution = await enqueueWorkflowExecution(id);
+    const workflow = await getWorkflow(id);
+    const execution = workflow?.kind === "test-workflow"
+      ? await enqueueTestWorkflowExecution(id)
+      : await enqueueWorkflowExecution(id);
     return NextResponse.json({ execution }, { status: 202 });
   } catch (error) {
     return NextResponse.json(

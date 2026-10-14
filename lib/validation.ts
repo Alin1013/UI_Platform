@@ -8,6 +8,8 @@ import type {
   MidsceneCacheStrategy,
   MidsceneScrollDirection,
   RunnerId,
+  WorkflowKind,
+  WorkflowNode,
   TestWorkflow,
 } from "./types";
 
@@ -196,7 +198,9 @@ export interface TaskDraft {
 export interface WorkflowDraft {
   name: string;
   description?: string;
+  kind?: WorkflowKind;
   taskIds: string[];
+  nodes?: WorkflowNode[];
 }
 
 /**
@@ -211,24 +215,46 @@ export function parseWorkflowDraft(input: unknown): WorkflowDraft {
   const name = String(raw.name ?? "").trim();
   if (!name) throw new Error("组合名称不能为空");
 
-  if (!Array.isArray(raw.taskIds) || raw.taskIds.length === 0) {
-    throw new Error("组合至少需要选择一个用例");
-  }
-  const taskIds = raw.taskIds.map((item) => String(item).trim());
-  if (taskIds.some((taskId) => !taskId)) {
-    throw new Error("组合中的用例 ID 不能为空");
-  }
-  if (new Set(taskIds).size !== taskIds.length) {
-    throw new Error("同一个用例在一次组合里只能出现一次");
-  }
-  if (taskIds.length > 20) {
-    throw new Error("单个组合最多包含 20 个用例");
+  const kind = raw.kind === "test-workflow" ? "test-workflow" : "composition";
+  const rawNodes = raw.nodes;
+  let nodes: WorkflowNode[] | undefined;
+  let taskIds: string[] = [];
+  if (kind === "test-workflow") {
+    if (!Array.isArray(rawNodes) || rawNodes.length === 0) {
+      throw new Error("测试工作流至少需要选择一个用例或组合");
+    }
+    nodes = rawNodes.map((item, index) => {
+      if (!item || typeof item !== "object") {
+        throw new Error(`第 ${index + 1} 个工作流节点必须是对象`);
+      }
+      const node = item as Record<string, unknown>;
+      const type = String(node.type ?? "");
+      const id = String(type === "task" ? node.taskId : node.workflowId ?? "").trim();
+      if ((type !== "task" && type !== "workflow") || !id) {
+        throw new Error(`第 ${index + 1} 个工作流节点引用无效`);
+      }
+      return type === "task" ? { type, taskId: id } : { type, workflowId: id };
+    });
+    if (new Set(nodes.map((node) => `${node.type}:${node.type === "task" ? node.taskId : node.workflowId}`)).size !== nodes.length) {
+      throw new Error("同一个用例或组合在一次工作流里只能出现一次");
+    }
+    if (nodes.length > 20) throw new Error("单个测试工作流最多包含 20 个节点");
+  } else {
+    if (!Array.isArray(raw.taskIds) || raw.taskIds.length === 0) {
+      throw new Error("组合至少需要选择一个用例");
+    }
+    taskIds = raw.taskIds.map((item) => String(item).trim());
+    if (taskIds.some((taskId) => !taskId)) throw new Error("组合中的用例 ID 不能为空");
+    if (new Set(taskIds).size !== taskIds.length) throw new Error("同一个用例在一次组合里只能出现一次");
+    if (taskIds.length > 20) throw new Error("单个组合最多包含 20 个用例");
   }
 
   return {
     name,
     description: optionalText(raw.description),
+    kind,
     taskIds,
+    nodes,
   };
 }
 
@@ -239,6 +265,7 @@ export function workflowFromDraft(
   const now = new Date().toISOString();
   return {
     ...draft,
+    kind: draft.kind ?? existing?.kind ?? "composition",
     id: existing?.id ?? crypto.randomUUID(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,

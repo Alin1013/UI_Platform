@@ -25,7 +25,7 @@ export default function EditWorkflowPage() {
       .then(([taskPayload, workflowPayload]) => {
         if (!active) return;
         setTasks(taskPayload.tasks);
-        const current = workflowPayload.workflows.find((item) => item.id === id);
+        const current = workflowPayload.workflows.find((item) => item.id === id && item.kind !== "test-workflow");
         if (!current) setError("流程组合不存在或已被删除");
         else setWorkflow(current);
       })

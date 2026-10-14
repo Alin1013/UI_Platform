@@ -1,6 +1,6 @@
 /** 任务区域布局：持久化二级导航，用路径和面包屑表达独立工作页面。 */
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -17,14 +17,26 @@ const navigation = [
   { href: "/tasks/list", label: "用例列表", icon: ListChecks },
   { href: "/tasks/new", label: "新建用例", icon: Plus },
   { href: "/tasks/workflows", label: "组合管理", icon: Workflow },
+  { href: "/tasks/test-workflows", label: "测试工作流", icon: Workflow },
 ];
 
 /** 编辑页归属列表；深链接也能通过第三层面包屑返回父页面。 */
 export default function TasksLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [pathReady, setPathReady] = useState(false);
+  // 静态页面首屏的服务端路径可能与客户端路由不同，等挂载后再绘制路径高亮。
+  useEffect(() => setPathReady(true), []);
   const editing = pathname.endsWith("/edit");
   const workflowPage = pathname.startsWith("/tasks/workflows");
-  const current = workflowPage
+  const testWorkflowPage = pathname.startsWith("/tasks/test-workflows");
+  // 两种流程共享画布布局，但通过各自路由保持列表和编辑语义清晰。
+  const current = testWorkflowPage
+    ? editing
+      ? "编辑工作流"
+      : pathname.endsWith("/new")
+        ? "新建工作流"
+        : "测试工作流"
+    : workflowPage
     ? editing
       ? "编辑组合"
       : pathname.endsWith("/new")
@@ -40,10 +52,11 @@ export default function TasksLayout({ children }: { children: ReactNode }) {
         <p>用例与流程</p>
         <nav className={styles.navigation} aria-label="任务管理二级导航">
           {navigation.map(({ href, label, icon: Icon }) => {
-            const active =
+            const active = pathReady && (
               pathname === href ||
               (editing && href === "/tasks/list") ||
-              (workflowPage && href === "/tasks/workflows");
+              (workflowPage && href === "/tasks/workflows") ||
+              (testWorkflowPage && href === "/tasks/test-workflows"));
             return (
               <Link
                 key={href}
@@ -66,9 +79,11 @@ export default function TasksLayout({ children }: { children: ReactNode }) {
             <>
               <Link href="/tasks">任务管理</Link>
               <ChevronRight size={14} aria-hidden />
-              {workflowPage && pathname !== "/tasks/workflows" ? (
+              {(workflowPage && pathname !== "/tasks/workflows") || testWorkflowPage ? (
                 <>
-                  <Link href="/tasks/workflows">组合管理</Link>
+                  <Link href={testWorkflowPage ? "/tasks/test-workflows" : "/tasks/workflows"}>
+                    {testWorkflowPage ? "测试工作流" : "组合管理"}
+                  </Link>
                   <ChevronRight size={14} aria-hidden />
                 </>
               ) : null}

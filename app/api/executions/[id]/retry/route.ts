@@ -1,7 +1,7 @@
 /** 执行重试 API；按原执行类型重新入队，保留失败记录用于结果对比。 */
 
 import { NextResponse } from "next/server";
-import { enqueueExecution, enqueueWorkflowExecution } from "@/lib/queue";
+import { enqueueExecution, enqueueTestWorkflowExecution, enqueueWorkflowExecution } from "@/lib/queue";
 import { getExecution, listExecutions } from "@/lib/store";
 
 interface RetryRuntime {
@@ -74,7 +74,9 @@ export async function POST(
       // 重试始终创建新执行；原记录不可变，方便追踪每次人工干预和修复后的结果。
       return source.kind === "workflow"
         ? source.workflowId
-          ? await enqueueWorkflowExecution(source.workflowId)
+          ? source.workflowKind === "test-workflow"
+            ? await enqueueTestWorkflowExecution(source.workflowId)
+            : await enqueueWorkflowExecution(source.workflowId)
           : undefined
         : source.taskId
           ? await enqueueExecution(source.taskId)

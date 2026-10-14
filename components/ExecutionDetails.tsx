@@ -172,6 +172,8 @@ function ExecutionDetailsView({
 
   // 流程父执行没有浏览器步骤日志；这里用子执行结果渲染组合视角，单用例继续走原详情。
   if (execution.kind === "workflow") {
+    // workflowKind 只影响报告标签；父子执行模型仍与既有组合报告兼容。
+    const isTestWorkflow = execution.workflowKind === "test-workflow";
     const children = [...workflowChildren].sort(
       (left, right) => (left.workflowOrder ?? 0) - (right.workflowOrder ?? 0),
     );
@@ -185,8 +187,8 @@ function ExecutionDetailsView({
       <div className={`panel ${styles.details}`}>
         <div className="panel-header">
           <div>
-            <div className="panel-title">{execution.workflowName ?? "流程组合"}</div>
-            <span className="muted">组合流程 · {execution.totalSteps} 个用例</span>
+            <div className="panel-title">{execution.workflowName ?? (isTestWorkflow ? "测试工作流" : "流程组合")}</div>
+            <span className="muted">{isTestWorkflow ? "测试工作流" : "组合流程"} · {execution.totalSteps} 个用例</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {canManuallyRetry(execution.status) ? (
@@ -229,13 +231,13 @@ function ExecutionDetailsView({
           {execution.error ? <p className="error-text">{execution.error}</p> : null}
           {retryError ? <p className="error-text">{retryError}</p> : null}
 
-          <h3 style={{ marginBottom: 8 }}>用例结果</h3>
+          <h3 style={{ marginBottom: 8 }}>{isTestWorkflow ? "工作流执行结果" : "用例结果"}</h3>
           {children.length ? (
             <table className="table">
               <thead>
                 <tr>
                   <th>顺序</th>
-                  <th>用例</th>
+                  <th>{isTestWorkflow ? "执行节点" : "用例"}</th>
                   <th>状态</th>
                   <th>耗时</th>
                   <th>操作</th>
