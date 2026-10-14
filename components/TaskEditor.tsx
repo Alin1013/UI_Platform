@@ -109,6 +109,8 @@ function draftFromTask(task?: AutomationTask | null) {
     runner: task?.runner ?? "playwright",
     runtime: {
       ...task?.runtime,
+      // Trace 是失败排查的重要证据；新建任务默认保留，已有任务的显式关闭选择仍然有效。
+      trace: task?.runtime?.trace ?? true,
       // 老任务没有 cache 字段时在表单里显式呈现平台默认策略。
       cache: task?.runtime?.cache ?? { enabled: true, strategy: "read-write" },
     },
@@ -413,7 +415,7 @@ export function TaskEditor({
           <label className="checkbox">
             <input
               type="checkbox"
-              checked={draft.runtime.trace ?? false}
+              checked={draft.runtime.trace ?? true}
               onChange={(event) =>
                 setDraft({
                   ...draft,

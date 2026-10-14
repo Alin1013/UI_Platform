@@ -143,6 +143,7 @@ try {
     .click();
   await page.waitForURL("**/tasks/new");
   await page.getByLabel("任务名称", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("保存 Playwright trace").isChecked(), true, "新建任务默认保留 Playwright trace");
   assert.equal(await page.locator("table").count(), 0, "新建页不混入列表");
   await page.getByLabel("任务名称", { exact: true }).fill("手工创建流程");
   await page.getByRole("button", { name: "保存任务", exact: true }).click();
