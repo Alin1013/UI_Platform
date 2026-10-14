@@ -236,6 +236,8 @@ try {
   await page.getByRole("link", { name: "新建组合", exact: true }).click();
   await page.waitForURL("**/tasks/workflows/new");
   await page.getByLabel("组合名称", { exact: true }).fill("新建业务组合");
+  assert.equal(await page.getByRole("button", { name: "开始节点，可拖动用例到流程开头" }).getAttribute("draggable"), "true", "开始节点可拖动");
+  assert.equal(await page.getByRole("button", { name: "结束节点，可拖动用例到流程末尾" }).getAttribute("draggable"), "true", "结束节点可拖动");
   await page.getByRole("button", { name: /添加用例 登录流程已修改/ }).click();
   await page.getByRole("button", { name: "保存组合", exact: true }).click();
   await page.waitForURL("**/tasks/workflows");

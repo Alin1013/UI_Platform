@@ -141,6 +141,10 @@
 
 .startNode,
 .endNode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   min-width: 78px;
   padding: 6px 14px;
   border: 1px solid #aebdcb;
@@ -150,6 +154,14 @@
   font-size: 12px;
   font-weight: 700;
   text-align: center;
+  cursor: grab;
+  user-select: none;
+}
+
+/* 边界节点是可放置用例的拖拽锚点，按下时给出抓取反馈。 */
+.startNode:active,
+.endNode:active {
+  cursor: grabbing;
 }
 
 .endNode {

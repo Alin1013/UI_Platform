@@ -55,11 +55,15 @@ export function WorkflowBuilder({
   );
 
   /** 画布只允许一个用例算子出现一次，顺序由加入顺序决定。 */
-  function addTask(taskId: string) {
+  function addTask(taskId: string, insertionIndex = draft.taskIds.length) {
     setDraft((current) =>
       current.taskIds.includes(taskId)
         ? current
-        : { ...current, taskIds: [...current.taskIds, taskId] },
+        : {
+            ...current,
+            // 开始/结束节点是可拖拽锚点；插入位置由落点决定，但边界节点本身不进入持久化 taskIds。
+            taskIds: [...current.taskIds.slice(0, insertionIndex), taskId, ...current.taskIds.slice(insertionIndex)],
+          },
     );
   }
 
@@ -82,10 +86,10 @@ export function WorkflowBuilder({
   }
 
   /** HTML5 drop 只传 task id，画布负责把算子追加到流程尾部。 */
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
+  function handleDrop(event: DragEvent<HTMLDivElement>, insertionIndex?: number) {
     event.preventDefault();
     const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId;
-    if (taskId) addTask(taskId);
+    if (taskId) addTask(taskId, insertionIndex);
     setDraggingTaskId("");
   }
 
@@ -174,7 +178,22 @@ export function WorkflowBuilder({
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
         >
-          <div className={styles.startNode}>开始</div>
+          <div
+            className={styles.startNode}
+            draggable
+            role="button"
+            tabIndex={0}
+            aria-label="开始节点，可拖动用例到流程开头"
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("application/x-workflow-boundary", "start");
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => handleDrop(event, 0)}
+          >
+            <GripVertical size={13} aria-hidden />
+            <span>开始</span>
+          </div>
           {selectedTasks.map((task, index) => (
             <div className={styles.nodeGroup} key={draft.taskIds[index]}>
               <div className={styles.connector} aria-hidden />
@@ -216,7 +235,22 @@ export function WorkflowBuilder({
             </div>
           ))}
           <div className={styles.connector} aria-hidden />
-          <div className={styles.endNode}>结束</div>
+          <div
+            className={styles.endNode}
+            draggable
+            role="button"
+            tabIndex={0}
+            aria-label="结束节点，可拖动用例到流程末尾"
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("application/x-workflow-boundary", "end");
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => handleDrop(event)}
+          >
+            <GripVertical size={13} aria-hidden />
+            <span>结束</span>
+          </div>
           {!draft.taskIds.length ? <p className={styles.canvasEmpty}>从左侧添加第一个用例算子</p> : null}
         </div>
       </div>
