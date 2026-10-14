@@ -12,6 +12,8 @@
 }
 
 .layout .record {
+  /* 执行记录以无框列表项呈现，避免每条名称和状态重复套用按钮卡片边框。 */
+  border: 0;
   min-width: 0;
   white-space: normal;
   text-align: left;
