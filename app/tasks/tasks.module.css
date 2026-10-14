@@ -234,7 +234,9 @@
 }
 .rowActions {
   display: flex;
-  flex-wrap: wrap;
+  /* 操作按钮属于同一组，保持单行便于按固定顺序扫描和连续点击。 */
+  flex-wrap: nowrap;
+  white-space: nowrap;
   gap: 6px;
   min-width: 210px;
 }
