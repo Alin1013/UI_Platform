@@ -17,6 +17,8 @@ npm run start
 
 “自然语言测试用例”面板支持常见中文指令：打开 URL、输入、点击、按键、等待和断言文本。系统会先解析为可编辑的 Playwright 步骤，再保存用例并立即执行。
 
+“Midscene 智能编排”面板可以读取已保存的测试用例，把原步骤转换为 Midscene 语义操作，并自动补充业务断言；结果先预览，确认后才创建 Midscene 用例并执行。
+
 “AI 用例生成”面板面向开放业务需求。输入需求、目标 URL 和执行引擎后先生成步骤预览；点击保存才创建任务，平台不会自动执行生成结果。
 
 任务可以选择两个执行引擎：
@@ -45,6 +47,7 @@ UI / API
 - 任务 CRUD：`/api/tasks`
 - 流程组合 CRUD：`/api/workflows`、`/api/workflows/:id`
 - 自然语言生成并执行：`POST /api/tasks/from-script`
+- 已有用例转 Midscene：`POST /api/tasks/from-case`（默认预览，`save=true` 后保存并执行）
 - AI 用例草稿：`POST /api/tasks/generate`（默认只预览）
 - 任务执行：`POST /api/tasks/:id/run`
 - 组合执行：`POST /api/workflows/:id/run`
