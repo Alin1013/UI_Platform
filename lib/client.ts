@@ -50,6 +50,22 @@ export function createTaskFromScript(input: {
   );
 }
 
+/** 读取已有用例并生成 Midscene 草稿；确认后回传 draft，服务端会原子保存并入队。 */
+export function generateMidsceneFromCase(input: { taskId: string }) {
+  return requestJson<{ draft: TaskDraft }>("/api/tasks/from-case", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** 保存用户确认后的 Midscene 草稿；服务端沿用统一校验并立即创建一次执行记录。 */
+export function saveMidsceneCase(input: { taskId: string; draft: TaskDraft }) {
+  return requestJson<{ task: AutomationTask; execution: TaskExecution }>(
+    "/api/tasks/from-case",
+    { method: "POST", body: JSON.stringify({ ...input, save: true }) },
+  );
+}
+
 export function updateTask(id: string, task: unknown) {
   return requestJson<{ task: AutomationTask }>(`/api/tasks/${id}`, {
     method: "PUT",

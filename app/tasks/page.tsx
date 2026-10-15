@@ -18,6 +18,7 @@ import {
 import { TaskEditor } from "@/components/TaskEditor";
 import { ScriptTaskForm } from "@/components/ScriptTaskForm";
 import { AiTaskForm } from "@/components/AiTaskForm";
+import { MidsceneCaseForm } from "@/components/MidsceneCaseForm";
 import { WorkflowManager } from "@/components/WorkflowManager";
 import { StatusBadge } from "@/components/StatusBadge";
 
@@ -175,6 +176,10 @@ export default function TasksPage() {
       <div className="form-grid" style={{ marginBottom: 16 }}>
         <ScriptTaskForm />
         <AiTaskForm onSaved={refresh} />
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <MidsceneCaseForm />
       </div>
 
       <WorkflowManager
