@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ListChecks, Sparkles, WandSparkles } from "lucide-react";
+import { BrainCircuit, ListChecks, Sparkles, WandSparkles } from "lucide-react";
 import { TaskEditor } from "@/components/TaskEditor";
 import { ScriptTaskForm } from "@/components/ScriptTaskForm";
 import { AiTaskForm } from "@/components/AiTaskForm";
+import { MidsceneCaseForm } from "@/components/MidsceneCaseForm";
 import styles from "../tasks.module.css";
 
 const modes = [
@@ -27,6 +28,12 @@ const modes = [
     title: "AI 生成",
     text: "描述业务需求，预览确认后保存",
     icon: Sparkles,
+  },
+  {
+    id: "midscene",
+    title: "Midscene 编排",
+    text: "读取已有用例，自动补齐语义步骤和断言",
+    icon: BrainCircuit,
   },
 ] as const;
 
@@ -85,8 +92,10 @@ export default function NewTaskPage() {
           </section>
         ) : mode === "script" ? (
           <ScriptTaskForm />
-        ) : (
+        ) : mode === "ai" ? (
           <AiTaskForm onSaved={() => router.push("/tasks/list")} />
+        ) : (
+          <MidsceneCaseForm />
         )}
       </div>
     </>
