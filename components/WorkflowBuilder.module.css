@@ -206,7 +206,14 @@
   border-radius: 7px;
   background: #fff;
   box-shadow: 0 4px 12px rgb(23 33 43 / 6%);
+  cursor: grab;
+  user-select: none;
 }
+
+/* 拖拽中和可放置节点使用明确反馈，用户能看出顺序插入位置而不依赖隐形状态。 */
+.node:active { cursor: grabbing; }
+.nodeDragging { opacity: 0.55; }
+.nodeDropTarget { border-color: var(--accent); box-shadow: 0 0 0 2px rgb(37 99 235 / 16%); }
 
 .nodeIndex {
   display: grid;

@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Save, Trash2, X } from "lucide-react";
 import type { AutomationTask, TestWorkflow } from "@/lib/types";
@@ -17,6 +17,14 @@ type WorkflowDraft = {
   description: string;
   taskIds: string[];
 };
+
+type NodePosition = { x: number; y: number };
+type NodePointerDrag = { taskId: string; offsetX: number; offsetY: number } | null;
+
+/** 给新节点留出顺序清晰的默认位置；后续位置只保存在编辑草稿中。 */
+function initialPosition(index: number): NodePosition {
+  return { x: 28 + (index % 2) * 188, y: 96 + Math.floor(index / 2) * 126 };
+}
 
 /** 新建与编辑共用的画布表单；workflow 不存在时就是新建模式。 */
 export function WorkflowBuilder({
@@ -38,6 +46,9 @@ export function WorkflowBuilder({
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState("");
+  const [positions, setPositions] = useState<Record<string, NodePosition>>({});
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const pointerDragRef = useRef<NodePointerDrag>(null);
 
   // 编辑目标由路由异步加载；只在目标 ID 变化时重置画布，避免输入过程中被刷新覆盖。
   useEffect(() => {
@@ -46,6 +57,7 @@ export function WorkflowBuilder({
       description: workflow?.description ?? "",
       taskIds: workflow?.taskIds ?? [],
     });
+    setPositions(Object.fromEntries((workflow?.taskIds ?? []).map((taskId, index) => [taskId, initialPosition(index)])));
     setMessage("");
   }, [workflow?.id]);
 
@@ -53,18 +65,14 @@ export function WorkflowBuilder({
     () => draft.taskIds.map((id) => tasks.find((task) => task.id === id)),
     [draft.taskIds, tasks],
   );
+  const canvasHeight = Math.max(516, ...Object.values(positions).map((position) => position.y + 150));
 
-  /** 画布只允许一个用例算子出现一次，顺序由加入顺序决定。 */
-  function addTask(taskId: string, insertionIndex = draft.taskIds.length) {
-    setDraft((current) =>
-      current.taskIds.includes(taskId)
-        ? current
-        : {
-            ...current,
-            // 开始/结束节点是可拖拽锚点；插入位置由落点决定，但边界节点本身不进入持久化 taskIds。
-            taskIds: [...current.taskIds.slice(0, insertionIndex), taskId, ...current.taskIds.slice(insertionIndex)],
-          },
-    );
+  /** 算子单次只能进入画布一次；坐标决定显示位置，纵向位置决定保存后的执行顺序。 */
+  function addTask(taskId: string, position = initialPosition(draft.taskIds.length)) {
+    if (draft.taskIds.includes(taskId)) return;
+    setDraft((current) => ({ ...current, taskIds: [...current.taskIds, taskId] }));
+    setPositions((current) => ({ ...current, [taskId]: position }));
+    setMessage("");
   }
 
   function removeTask(taskId: string) {
@@ -72,9 +80,14 @@ export function WorkflowBuilder({
       ...current,
       taskIds: current.taskIds.filter((id) => id !== taskId),
     }));
+    setPositions((current) => {
+      const next = { ...current };
+      delete next[taskId];
+      return next;
+    });
   }
 
-  /** 相邻交换即是执行顺序交换，不引入额外的画布坐标状态。 */
+  /** 相邻交换仍保留给键盘和精细调整；画布拖动则可在任意位置重排。 */
   function moveTask(index: number, offset: -1 | 1) {
     setDraft((current) => {
       const target = index + offset;
@@ -85,12 +98,64 @@ export function WorkflowBuilder({
     });
   }
 
-  /** HTML5 drop 只传 task id，画布负责把算子追加到流程尾部。 */
-  function handleDrop(event: DragEvent<HTMLDivElement>, insertionIndex?: number) {
+  /** 将面板算子放到指针位置；边界节点不进入 taskIds，只作为流程视觉锚点。 */
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId;
-    if (taskId) addTask(taskId, insertionIndex);
+    const canvas = canvasRef.current;
+    if (taskId && canvas) {
+      const bounds = canvas.getBoundingClientRect();
+      addTask(taskId, {
+        x: Math.max(16, Math.min(event.clientX - bounds.left - 110, bounds.width - 236)),
+        y: Math.max(80, Math.min(event.clientY - bounds.top - 34, 620)),
+      });
+    }
     setDraggingTaskId("");
+  }
+
+  /** 指针拖动允许节点脱离默认竖向链自由摆放，但仍受画布边界约束。 */
+  function startNodeDrag(event: React.PointerEvent<HTMLElement>, taskId: string) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const node = event.currentTarget.getBoundingClientRect();
+    pointerDragRef.current = { taskId, offsetX: event.clientX - node.left, offsetY: event.clientY - node.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveNode(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = pointerDragRef.current;
+    const canvas = canvasRef.current;
+    if (!drag || !canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    setPositions((current) => ({
+      ...current,
+      [drag.taskId]: {
+        x: Math.max(16, Math.min(event.clientX - bounds.left - drag.offsetX, bounds.width - 236)),
+        y: Math.max(80, Math.min(event.clientY - bounds.top - drag.offsetY, 620)),
+      },
+    }));
+  }
+
+  /** 放开节点时按画布纵向坐标同步执行顺序，横向坐标作为同一行的稳定排序依据。 */
+  function finishNodeDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = pointerDragRef.current;
+    const canvas = canvasRef.current;
+    if (!drag || !canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    const finalPosition = {
+      x: Math.max(16, Math.min(event.clientX - bounds.left - drag.offsetX, bounds.width - 236)),
+      y: Math.max(80, Math.min(event.clientY - bounds.top - drag.offsetY, 620)),
+    };
+    const nextPositions = { ...positions, [drag.taskId]: finalPosition };
+    setPositions(nextPositions);
+    setDraft((current) => ({
+      ...current,
+      taskIds: [...current.taskIds].sort((left, right) => {
+        const a = nextPositions[left] ?? initialPosition(current.taskIds.indexOf(left));
+        const b = nextPositions[right] ?? initialPosition(current.taskIds.indexOf(right));
+        return a.y - b.y || a.x - b.x;
+      }),
+    }));
+    pointerDragRef.current = null;
   }
 
   async function save() {
@@ -174,30 +239,34 @@ export function WorkflowBuilder({
           <span className={styles.stepCount}>{draft.taskIds.length} 个步骤</span>
         </div>
         <div
+          ref={canvasRef}
           className={`${styles.canvas} ${draft.taskIds.length ? styles.canvasFilled : ""}`}
+          style={{ minHeight: canvasHeight }}
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
+          onPointerMove={moveNode}
+          onPointerUp={finishNodeDrag}
+          onPointerCancel={() => { pointerDragRef.current = null; }}
         >
           <div
             className={styles.startNode}
             draggable
             role="button"
             tabIndex={0}
-            aria-label="开始节点，可拖动用例到流程开头"
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("application/x-workflow-boundary", "start");
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => handleDrop(event, 0)}
+            aria-label="开始节点"
           >
-            <GripVertical size={13} aria-hidden />
             <span>开始</span>
           </div>
           {selectedTasks.map((task, index) => (
-            <div className={styles.nodeGroup} key={draft.taskIds[index]}>
-              <div className={styles.connector} aria-hidden />
-              <article className={styles.node}>
+            <div
+              className={styles.nodeGroup}
+              key={draft.taskIds[index]}
+              style={{ left: positions[draft.taskIds[index] ?? ""]?.x ?? initialPosition(index).x, top: positions[draft.taskIds[index] ?? ""]?.y ?? initialPosition(index).y }}
+            >
+              <article
+                className={styles.node}
+                onPointerDown={(event) => startNodeDrag(event, draft.taskIds[index]!)}
+              >
                 <div className={styles.nodeIndex}>{index + 1}</div>
                 <div className={styles.nodeContent}>
                   <span className={styles.nodeType}>用例算子</span>
@@ -234,21 +303,14 @@ export function WorkflowBuilder({
               </article>
             </div>
           ))}
-          <div className={styles.connector} aria-hidden />
           <div
             className={styles.endNode}
             draggable
             role="button"
             tabIndex={0}
-            aria-label="结束节点，可拖动用例到流程末尾"
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("application/x-workflow-boundary", "end");
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => handleDrop(event)}
+            style={{ top: canvasHeight - 52 }}
+            aria-label="结束节点"
           >
-            <GripVertical size={13} aria-hidden />
             <span>结束</span>
           </div>
           {!draft.taskIds.length ? <p className={styles.canvasEmpty}>从左侧添加第一个用例算子</p> : null}
